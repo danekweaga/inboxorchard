@@ -6,6 +6,10 @@ You clone this repo, create your own Meta app, connect your own Instagram accoun
 
 > **Status:** feature-complete for single-creator use — the automation engine (OAuth, polling, token refresh, rate limiting, analytics events) **plus a ManyChat-style web UI** to build and monitor campaigns without editing JSON.
 
+> 🎬 **TikTok support is coming soon.** Same comment→DM funnel, same self-hosted setup. Star the repo to get notified.
+
+> 💬 **Stuck? DM me** [@build.ryanip](https://instagram.com/build.ryanip) on Instagram and I'll help you get it running. Bug reports and feature ideas are welcome in [Issues](https://github.com/ryanlaiyanip-ctrl/chatmany/issues).
+
 ---
 
 ## 🤖 Want an AI to walk you through the install?
@@ -632,6 +636,17 @@ src/
 public/               web UI (index.html, styles.css, app.js), plus /privacy, /terms, /data-deletion
 schema/               D1 migrations
 ```
+
+## Questions or problems?
+
+**DM [@build.ryanip](https://instagram.com/build.ryanip) on Instagram** — happy to help you get set up, especially if you're stuck on the Meta dashboard.
+
+Found a bug or want a feature? Open an [issue](https://github.com/ryanlaiyanip-ctrl/chatmany/issues). If the setup guide was confusing anywhere, that's worth an issue too — most problems people hit here are documentation problems, not code problems.
+
+## Roadmap
+
+- **TikTok support** — coming soon. Same comment→DM funnel, self-hosted the same way.
+- **"Any post" trigger** — watch every post automatically instead of picking one.
 
 ## License
 
