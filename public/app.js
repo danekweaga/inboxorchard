@@ -511,7 +511,6 @@ function defaultDraft() {
     keywords: ["Link"],
     exclude: [],
     public_reply: { enabled: false, texts: ["Sent you a DM! 📩", "Check your DMs 👀"] },
-    like_comment: false,
     opening_enabled: true,
     check_follow: false,
     ask_email: false,
@@ -537,7 +536,6 @@ function draftFromCampaign(c) {
     keywords: c.keywords || [],
     exclude: c.exclude || [],
     public_reply: c.public_reply || { enabled: false, texts: ["Sent you a DM! 📩"] },
-    like_comment: !!c.like_comment,
     opening_enabled: true,
     check_follow: !!c.check_follow,
     ask_email: !!c.ask_email,
@@ -682,8 +680,8 @@ function renderSections() {
           <label class="field"><span class="label">Public replies (one per line, rotated)</span>
             <textarea id="pr_texts">${esc((d.public_reply.texts || []).join("\n"))}</textarea></label>
         </div>
-        <div class="toggle-row"><div><div class="tr-title">Like their comment</div><div class="tr-sub">Heart the triggering comment.</div></div>
-          <label class="switch"><input type="checkbox" id="like_comment" ${d.like_comment ? "checked" : ""}/><span class="slider"></span></label></div>
+        <div class="toggle-row disabled"><div><div class="tr-title">Like their comment</div><div class="tr-sub">Not possible — Instagram's API has no way to like a comment.</div></div>
+          <label class="switch"><input type="checkbox" disabled/><span class="slider"></span></label></div>
       </div>
     </div>
 
@@ -775,7 +773,6 @@ function wireSections() {
     };
   };
   bindToggle("pr_enabled", (v) => (d.public_reply.enabled = v), "pr_texts_wrap");
-  bindToggle("like_comment", (v) => (d.like_comment = v));
   bindToggle("opening_enabled", (v) => (d.opening_enabled = v), "opening_wrap");
   bindToggle("check_follow", (v) => (d.check_follow = v), "follow_wrap");
   bindToggle("ask_email", (v) => (d.ask_email = v), "email_wrap");
@@ -829,8 +826,7 @@ function renderPreview() {
         <div class="sheet-handle"></div>
         <div class="sheet-head"><span>Comments</span>${ICON.send}</div>
         <div class="sheet-body">
-          <div class="cmt"><div class="av">@</div><div class="body"><span class="u">follower</span>${esc(kw)}!<div class="meta">2m${d.like_comment ? " · liked by you" : ""} · Reply</div></div>${
-            d.like_comment ? `<span class="heart liked" style="margin-left:auto">${ICON.heart}</span>` : ""
+          <div class="cmt"><div class="av">@</div><div class="body"><span class="u">follower</span>${esc(kw)}!<div class="meta">2m · Reply</div></div>${""
           }</div>
           ${
             d.public_reply.enabled && (d.public_reply.texts[0] || "")
@@ -954,7 +950,6 @@ function buildCampaignFromDraft() {
     keywords: d.keywords,
     exclude: d.exclude,
     public_reply: d.public_reply.enabled ? { enabled: true, texts: d.public_reply.texts } : { enabled: false, texts: d.public_reply.texts },
-    like_comment: d.like_comment,
     check_follow: d.check_follow,
     ask_email: d.ask_email,
     reward: d.reward,

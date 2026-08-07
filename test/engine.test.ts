@@ -125,11 +125,20 @@ describe("comment handling: trigger, dedup, idempotency", () => {
   });
 
   it("runs public actions once each, guarded against re-polls", async () => {
-    await upsertCampaign(db, campaign({ like_comment: true, public_reply: { enabled: true, texts: ["hi"] } }), true);
+    await upsertCampaign(db, campaign({ public_reply: { enabled: true, texts: ["hi"] } }), true);
     await engine.handleComment(comment());
     await engine.handleComment(comment()); // re-poll
     expect(client.calls.reply).toHaveLength(1);
-    expect(client.calls.like).toHaveLength(1);
+  });
+
+  // Instagram's API cannot like a comment — there is no /likes edge on a comment. An earlier
+  // version posted to /{comment-id}/likes, which errored on every triggering comment. This test
+  // previously passed only because the fake client happily accepted a call the real API rejects.
+  it("never attempts to like a comment, even when an old campaign has like_comment set", async () => {
+    await upsertCampaign(db, campaign({ like_comment: true, public_reply: { enabled: true, texts: ["hi"] } }), true);
+    await engine.handleComment(comment());
+    expect(client.calls.like).toHaveLength(0);
+    expect(client.calls.reply).toHaveLength(1); // the reply still works
   });
 });
 

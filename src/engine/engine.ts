@@ -95,11 +95,9 @@ export class Engine {
         await this.trySend(() => this.client.replyToComment(evt.comment_id, text), "public_reply");
       }
     }
-    if (campaign.like_comment) {
-      if (await claimCommentAction(this.db, evt.comment_id, "like")) {
-        await this.trySend(() => this.client.likeComment(evt.comment_id), "like_comment");
-      }
-    }
+    // `like_comment` is intentionally not acted on: Instagram's API has no way to like a comment
+    // (see the note in api/client.ts). The field is still accepted so older saved campaigns keep
+    // loading, but it does nothing.
   }
 
   /**

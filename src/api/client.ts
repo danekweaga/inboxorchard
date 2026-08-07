@@ -195,13 +195,12 @@ export class InstagramClient {
     return this.post(`/${commentId}/replies`, { message });
   }
 
-  /**
-   * Like the triggering comment (available since 2026-04-22; requires
-   * instagram_business_manage_comments). Verify the exact path against the current API docs.
-   */
-  likeComment(commentId: string): Promise<{ success?: boolean }> {
-    return this.post(`/${commentId}/likes`, {});
-  }
+  // NOTE: there is deliberately no likeComment() here. Instagram's API cannot like a comment.
+  // Its comment operations are limited to: read (GET /{media-id}/comments), reply
+  // (POST /{comment-id}/replies), delete (DELETE /{comment-id}), hide/unhide
+  // (POST /{comment-id}), and enable/disable on media (POST /{media-id}). There is no /likes
+  // edge. An earlier version posted to /{comment-id}/likes, which simply errored on every
+  // triggering comment.
 
   // ---- reads ----
 

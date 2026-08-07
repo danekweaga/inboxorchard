@@ -137,6 +137,8 @@ textarea { resize: vertical; min-height: 66px; }
 .toggle-row:first-child { border-top: 0; }
 .toggle-row .tr-title { font-weight: 600; }
 .toggle-row .tr-sub { color: var(--ink-soft); font-size: 13px; }
+.toggle-row.disabled { opacity: 0.55; }
+.toggle-row.disabled .switch { cursor: not-allowed; }
 .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider { position: absolute; inset: 0; background: #cdd4df; border-radius: 999px; transition: 0.15s; }

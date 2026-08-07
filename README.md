@@ -566,7 +566,7 @@ Note the Worker itself still deploys successfully when this happens, so it looks
 Open **`MY ADDRESS`** in your browser and sign in with the `OWNER TOKEN` from your note. You get the **chatmany web UI**:
 
 - **Automations** — every campaign as a row: status, keyword, runs, CTR. Bulk-select to **Archive** (pause without losing history) or **Delete** (permanent, cascades everywhere).
-- **Create** — a visual builder: pick the post/reel, set keywords (whole-word), toggle the public reply / like / follow-gate / email steps, and write your copy. A live Instagram phone preview (driven by your own avatar, handle, and selected post) shows exactly what followers see across Post / Comments / DM. Hit **Go live**.
+- **Create** — a visual builder: pick the post/reel, set keywords (whole-word), toggle the public reply / follow-gate / email steps, and write your copy. A live Instagram phone preview (driven by your own avatar, handle, and selected post) shows exactly what followers see across Post / Comments / DM. Hit **Go live**.
 - **Dashboard** — metric cards (comments, opening DMs, clicks + CTR, follows, emails, delivered) and a conversion funnel, over a date range.
 - **Contacts** — everyone who entered a campaign, their funnel status, captured email, with **Export CSV**.
 - **Archive** — campaigns you've paused; restore or permanently delete from here.
@@ -597,6 +597,7 @@ Either way, the polling cron (every minute, checking at most every ~90 seconds) 
   ```
 
 - **Keyword match is whole-word, case-insensitive.** Keyword `ai` fires on `"I like this AI"` or `"i like this ai"` but never on `"fair"`.
+- **Liking a comment is not possible.** Instagram's API has no `/likes` edge on a comment — the only comment operations it supports are read, reply, delete, hide/unhide, and enable/disable. The builder shows this toggle greyed out rather than letting you switch on something that silently does nothing.
 - **Opening DM is a private reply to the comment** — the only sanctioned way to open a chat with a fresh commenter (valid up to 7 days, once per comment). It uses a **postback button** so it survives the Requests folder.
 - **Follow-gate is self-attestation.** There is no official API to check whether someone follows you, so tapping "I followed" always advances; an opt-in `verify_follow_count` mode adds a weak follower-count heuristic instead.
 - **Email capture** uses Instagram's native `user_email` quick-reply chip, with a typed-reply fallback — an invalid reply gets re-asked instead of silently ignored, and the reward is only ever sent once a real email is captured.

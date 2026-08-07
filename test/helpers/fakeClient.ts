@@ -56,6 +56,8 @@ export class FakeClient {
     this.calls.reply.push({ commentId, message });
     return { id: "r" };
   }
+  // Deliberately still present so the test above can assert it is NEVER called. The real
+  // InstagramClient has no likeComment() — Instagram's API cannot like a comment.
   async likeComment(commentId: string) {
     this.guard("like");
     this.calls.like.push({ commentId });

@@ -65,6 +65,7 @@ export interface Campaign {
   keywords: string[];
   exclude?: string[];
   public_reply?: PublicReplyConfig;
+  /** @deprecated Instagram's API cannot like comments. Accepted for backwards compatibility; ignored. */
   like_comment?: boolean;
   check_follow?: boolean;
   verify_follow_count?: boolean;

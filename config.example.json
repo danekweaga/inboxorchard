@@ -8,7 +8,6 @@
       "keywords": ["LINK", "GUIDE"],
       "exclude": ["scam"],
       "public_reply": { "enabled": true, "texts": ["Sent you a DM! 📩", "Check your DMs 👀"] },
-      "like_comment": true,
       "check_follow": true,
       "verify_follow_count": false,
       "ask_email": true,
