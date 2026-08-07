@@ -13,6 +13,10 @@ const store = {
   campaigns: [],
   automationStats: {}, // campaign_id -> { runs, ctr }
   draft: null,
+  // JSON snapshot of the draft as it was last loaded or saved. Anything different
+  // means there are unsaved edits — see isDirty(). Snapshotting the whole draft
+  // catches click-driven toggles too, not just typed input.
+  savedSnapshot: null,
   previewTab: "dm",
   captionExpanded: false,
   dash: null,
@@ -170,6 +174,7 @@ function renderApp() {
   app.appendChild(layout);
   layout.querySelectorAll(".nav-item").forEach((b) => {
     b.onclick = () => {
+      if (store.page === "create" && b.dataset.page !== "create" && !confirmDiscard("leave this page")) return;
       store.page = b.dataset.page;
       paintNav();
       route();
@@ -216,6 +221,7 @@ function timeAgo(ts) {
 /** Open the Create builder pre-loaded with an existing campaign, or blank for a new one. */
 function openInBuilder(campaign) {
   store.draft = campaign ? draftFromCampaign(campaign) : defaultDraft();
+  markSaved();
   store.mediaShowAll = false;
   store.page = "create";
   paintNav();
@@ -543,7 +549,10 @@ function draftFromCampaign(c) {
 
 async function renderCreate() {
   const view = $("#view");
-  if (!store.draft) store.draft = defaultDraft();
+  if (!store.draft) {
+    store.draft = defaultDraft();
+    markSaved();
+  }
   try {
     if (store.media.length === 0 && store.status.connected && !store.status.token_expired) {
       const r = await api("/api/media");
@@ -568,7 +577,7 @@ async function renderCreate() {
         .map((c) => `<option value="${esc(c.campaign_id)}" ${c.campaign_id === d.campaign_id ? "selected" : ""}>${esc(c.name || c.campaign_id)}</option>`)
         .join("")}</select>
       ${d.campaign_id ? `<button class="btn danger sm" id="deletebtn">${ICON.trash} Delete</button>` : ""}
-      <button class="btn ghost sm" id="savebtn">Save</button>
+      <button class="btn ghost sm" id="savebtn" title="Changes do not take effect until saved">Save</button>
       <button class="btn primary sm" id="golive">${d.active ? "Stop" : "Go live"}</button>
     </div>`);
   view.appendChild(top);
@@ -578,17 +587,24 @@ async function renderCreate() {
 
   renderSections();
   renderPreview();
+  refreshDirtyUI();
 
   $("#cname").oninput = (e) => {
     d.name = e.target.value;
   };
   $("#loadsel").onchange = (e) => {
     const id = e.target.value;
+    if (!confirmDiscard("switch automations")) {
+      // Put the dropdown back on the automation the user is actually editing.
+      e.target.value = store.draft.campaign_id || "";
+      return;
+    }
     if (!id) store.draft = defaultDraft();
     else {
       const c = store.campaigns.find((x) => x.campaign_id === id);
       if (c) store.draft = draftFromCampaign(c);
     }
+    markSaved();
     renderCreate();
   };
   $("#savebtn").onclick = () => saveCampaign(false);
@@ -777,6 +793,7 @@ const iosStatusBar = () => `
   </div>`;
 
 function renderPreview() {
+  refreshDirtyUI();
   const d = store.draft;
   const s = store.status || {};
   const col = $("#previewcol");
@@ -871,6 +888,62 @@ function renderPreview() {
   }
 }
 
+/* ---------------- unsaved-changes tracking ----------------
+   Editing a live automation does nothing until it's saved. Before this, the only
+   hint was a quiet "Save" button next to a loud "Go live" — and since Go live
+   also saves, stopping and restarting appeared to "fix" edits that were simply
+   never saved. Now the button announces pending changes and every exit is guarded. */
+
+function draftSnapshot() {
+  if (!store.draft) return null;
+  const d = store.draft;
+  return JSON.stringify({ ...d, __active: d.active });
+}
+
+/** Call after loading a campaign into the draft, or after a successful save. */
+function markSaved() {
+  store.savedSnapshot = draftSnapshot();
+  refreshDirtyUI();
+}
+
+function isDirty() {
+  return !!store.draft && store.savedSnapshot !== null && store.savedSnapshot !== draftSnapshot();
+}
+
+/** Repaint the Save button so pending changes are impossible to miss. */
+function refreshDirtyUI() {
+  const btn = document.querySelector("#savebtn");
+  if (!btn) return;
+  const dirty = isDirty();
+  btn.className = `btn ${dirty ? "primary" : "ghost"} sm`;
+  btn.textContent = dirty ? "Save changes •" : "Save";
+}
+
+/**
+ * Guard an action that would discard unsaved edits. Returns true if it's safe
+ * to proceed (nothing pending, or the user chose to discard).
+ */
+function confirmDiscard(what = "leave") {
+  if (!isDirty()) return true;
+  return confirm(
+    `You have unsaved changes to "${store.draft.name || "this automation"}".\n\n` +
+      `They will NOT take effect until you save. If you ${what} now, the changes are lost.\n\n` +
+      `OK to discard them, or Cancel to go back and save.`,
+  );
+}
+
+// Typed edits don't re-render, so refresh the button straight from the DOM event.
+document.addEventListener("input", () => {
+  if (store.page === "create") refreshDirtyUI();
+});
+
+// Closing the tab / hitting back with pending edits.
+window.addEventListener("beforeunload", (e) => {
+  if (!isDirty()) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
 /* ---------------- save ---------------- */
 function buildCampaignFromDraft() {
   const d = store.draft;
@@ -912,6 +985,7 @@ async function saveCampaign(activation) {
     d.campaign_id = campaign.campaign_id;
     d.active = active;
     if (activation) {
+      markSaved();
       // Going live or stopping is the "I'm done editing" signal — land back on the automations list.
       toast(activation === "activate" ? "Automation is live" : "Automation stopped");
       store.page = "automations";
@@ -919,6 +993,7 @@ async function saveCampaign(activation) {
       route();
       return;
     }
+    markSaved();
     $("#statuspill").className = `status-pill ${active ? "live" : "stopped"}`;
     $("#statuspill").textContent = active ? "live" : "stopped";
     $("#golive").textContent = active ? "Stop" : "Go live";
