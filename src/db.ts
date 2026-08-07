@@ -151,6 +151,27 @@ export async function markCommentProcessed(
 }
 
 /** Returns true if this (comment, action) pair had not been recorded before (i.e. we may act now). */
+/**
+ * Claim an outbound send before it is attempted. Returns true if this caller owns the send
+ * (newly claimed), false if a previous attempt already claimed it — in which case that earlier
+ * attempt may have delivered, and re-sending would show the recipient the same DM twice.
+ */
+export async function claimSend(db: D1Database, key: string): Promise<boolean> {
+  const res = await db
+    .prepare(`INSERT OR IGNORE INTO send_claims (key, created_at) VALUES (?, ?)`)
+    .bind(key, now())
+    .run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Release a claim so the send can be retried. Only safe when the platform definitively rejected
+ * the request (nothing was delivered) — never after an ambiguous failure.
+ */
+export async function releaseSend(db: D1Database, key: string): Promise<void> {
+  await db.prepare(`DELETE FROM send_claims WHERE key = ?`).bind(key).run();
+}
+
 export async function claimCommentAction(
   db: D1Database,
   commentId: string,

@@ -12,10 +12,12 @@ import type {
   NormalizedMessage,
   State,
 } from "../types";
+import { InstagramApiError } from "../api/client";
 import { commentTriggers, extractEmail } from "./match";
 import { afterFollow, afterTap, expectedTitleForState, followRetriesExhausted, titleMatches } from "./transitions";
 import {
   claimCommentAction,
+  claimSend,
   createConversation,
   getActiveCampaigns,
   getCampaign,
@@ -26,6 +28,7 @@ import {
   kvSet,
   logEvent,
   markCommentProcessed,
+  releaseSend,
   updateConversation,
 } from "../db";
 import type { ConversationRow } from "../db";
@@ -110,14 +113,12 @@ export class Engine {
       title: campaign.copy.opening_button ?? "Continue",
       payload: OPENING_PAYLOAD,
     };
-    try {
-      await this.queue.run(() =>
-        this.client.privateReplyWithButtons(evt.comment_id, campaign.copy.opening, [button]),
-      );
-    } catch (e) {
-      console.warn(`[chatmany] opening send failed for ${evt.comment_id}: ${msg(e)}`);
-      return false;
-    }
+    const ok = await this.trySend(
+      () => this.client.privateReplyWithButtons(evt.comment_id, campaign.copy.opening, [button]),
+      "opening",
+      `opening:${campaign.campaign_id}:${evt.comment_id}`,
+    );
+    if (!ok) return false;
     await createConversation(this.db, evt.igsid, campaign.campaign_id, evt.username ?? null, "AWAITING_TAP");
     await logEvent(this.db, campaign.campaign_id, "comment_matched", evt.igsid);
     await logEvent(this.db, campaign.campaign_id, "opening_sent", evt.igsid);
@@ -241,6 +242,7 @@ export class Engine {
               { content_type: "text", title: campaign.copy.follow_button ?? "✅ I followed", payload: FOLLOW_PAYLOAD },
             ]),
           "follow_gate",
+          `follow_gate:${campaign.campaign_id}:${igsid}`,
         );
         if (!ok) return;
         if (campaign.verify_follow_count) await this.captureFollowerBaseline(campaign, igsid);
@@ -256,6 +258,7 @@ export class Engine {
               [{ content_type: "user_email" }],
             ),
           "email_ask",
+          `email_ask:${campaign.campaign_id}:${igsid}`,
         );
         if (!ok) return;
         await commit("AWAITING_EMAIL");
@@ -263,7 +266,11 @@ export class Engine {
       }
       case "DELIVER": {
         const text = campaign.copy.delivery.replaceAll("{reward}", campaign.reward.value);
-        const ok = await this.trySend(() => this.client.sendText(igsid, text), "delivery");
+        const ok = await this.trySend(
+          () => this.client.sendText(igsid, text),
+          "delivery",
+          `delivery:${campaign.campaign_id}:${igsid}`,
+        );
         if (!ok) return;
         await commit("DONE", "delivered");
         break;
@@ -315,14 +322,49 @@ export class Engine {
 
   // ---- send helpers ----
 
-  /** Run a send through the queue; return true on success, false on failure (logged). */
-  private async trySend<T>(fn: () => Promise<T>, label: string): Promise<boolean> {
+  /**
+   * Run a send through the queue, at most once per `key`.
+   *
+   * Sends are claimed before they go out. The outcome of a failed send is not always knowable:
+   * a timeout, dropped connection, or 5xx can all arrive *after* Instagram already delivered the
+   * message. Treating those as "never happened" and retrying is what shows a person the same DM
+   * twice, so instead:
+   *
+   *   - the platform answered with an error (any HTTP status) → the request reached Instagram and
+   *     was rejected, so nothing was delivered: release the claim and report failure so the caller
+   *     retries cleanly on the next poll;
+   *   - no answer at all (network error, timeout, dropped connection) → we never learned the
+   *     outcome and it may well have landed, so keep the claim and report success, advancing the
+   *     funnel rather than risking a duplicate;
+   *   - claim already held → a previous attempt got far enough to send, so skip and report
+   *     success. This is what catches a retry after the Worker died mid-send.
+   *
+   * The trade is deliberate: at-most-once delivery. A genuinely lost message leaves that person
+   * where they were instead of being messaged again.
+   */
+  private async trySend<T>(fn: () => Promise<T>, label: string, key?: string): Promise<boolean> {
+    const claimKey = key ?? null;
+    if (claimKey && !(await claimSend(this.db, claimKey))) {
+      console.warn(`[chatmany] skipping ${label}: already attempted, may have delivered (${claimKey})`);
+      return true;
+    }
     try {
       await this.queue.run(fn);
       return true;
     } catch (e) {
-      console.warn(`[chatmany] send failed (${label}): ${msg(e)}`);
-      return false;
+      // An InstagramApiError means we received an HTTP response — the request reached Instagram
+      // and was refused, so nothing went out. Anything else (fetch threw, timeout, socket closed)
+      // means we never learned the outcome, and the message may already be in the person's inbox.
+      const rejected = e instanceof InstagramApiError;
+      if (rejected) {
+        if (claimKey) await releaseSend(this.db, claimKey);
+        console.warn(`[chatmany] send failed (${label}), will retry: ${msg(e)}`);
+        return false;
+      }
+      console.warn(
+        `[chatmany] send outcome unknown (${label}): ${msg(e)} — treating as delivered so it is not sent twice`,
+      );
+      return claimKey ? true : false;
     }
   }
 }

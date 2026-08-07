@@ -17,6 +17,13 @@ export class FakeClient {
   };
   /** How many upcoming calls of each method should throw a (non-rate-limit) error. */
   failNext: Partial<Record<Method, number>> = {};
+  /**
+   * How many upcoming calls of each method should DELIVER and then throw — i.e. Instagram
+   * accepted and sent the message, but we never learned that (timeout, dropped connection,
+   * 5xx after processing). The call is recorded before the throw, so `calls` reflects what
+   * the recipient actually received. This is the case that produces real duplicate DMs.
+   */
+  deliverThenFailNext: Partial<Record<Method, number>> = {};
   followers = 100;
 
   private guard(m: Method): void {
@@ -27,9 +34,21 @@ export class FakeClient {
     }
   }
 
+  /** Call AFTER recording the call, to simulate a delivered-but-errored send. */
+  private guardAfter(m: Method): void {
+    const n = this.deliverThenFailNext[m] ?? 0;
+    if (n > 0) {
+      this.deliverThenFailNext[m] = n - 1;
+      // Deliberately NOT an InstagramApiError: this models the connection dropping after
+      // Instagram already accepted the send, so we never receive a status at all.
+      throw new Error("socket hang up");
+    }
+  }
+
   async privateReplyWithButtons(commentId: string, text: string, buttons: unknown) {
     this.guard("privateReply");
     this.calls.privateReply.push({ commentId, text, buttons });
+    this.guardAfter("privateReply");
     return { message_id: "m" };
   }
   async replyToComment(commentId: string, message: string) {
@@ -45,11 +64,13 @@ export class FakeClient {
   async sendQuickReplies(igsid: string, text: string, quickReplies: unknown) {
     this.guard("quick");
     this.calls.quick.push({ igsid, text, quickReplies });
+    this.guardAfter("quick");
     return { message_id: "m" };
   }
   async sendText(igsid: string, text: string) {
     this.guard("text");
     this.calls.text.push({ igsid, text });
+    this.guardAfter("text");
     return { message_id: "m" };
   }
   async getFollowersCount() {

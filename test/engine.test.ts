@@ -366,3 +366,43 @@ describe("archiving a campaign (soft-delete)", () => {
     expect(await getConversation(db, "user1", "c1")).not.toBeNull(); // still there — never deleted
   });
 });
+
+// Regression: a send that DELIVERS but then errors (timeout, dropped connection, 5xx after
+// Instagram already processed it) must not cause the same DM to be sent to the person twice.
+// The engine deliberately treats a thrown send as "never happened" so real failures retry —
+// but when the message actually landed, that retry is a duplicate the recipient sees.
+describe("duplicate sends when a delivered message reports failure", () => {
+  it("does not send the opening DM twice when the first send delivered but errored", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, campaign(), true);
+
+    // Poll 1: Instagram delivers the opening DM, then the connection drops.
+    client.deliverThenFailNext.privateReply = 1;
+    await engine.handleComment(comment());
+    expect(client.calls.privateReply).toHaveLength(1); // the person received it
+
+    // Poll 2: the same comment is re-read (it was never marked processed).
+    await engine.handleComment(comment());
+
+    // The person must not receive a second opening DM.
+    expect(client.calls.privateReply).toHaveLength(1);
+  });
+
+  it("does not send the follow gate twice when the first send delivered but errored", async () => {
+    const db = makeTestDb();
+    const client = new FakeClient();
+    const engine = new Engine(db, client as never, fastQueue());
+    await upsertCampaign(db, campaign({ check_follow: true }), true);
+    await engine.handleComment(comment());
+
+    client.deliverThenFailNext.quick = 1;
+    await engine.handleMessage(message({ timestamp: T + 10 }));
+    const afterFirst = client.calls.quick.length;
+    expect(afterFirst).toBe(1); // follow gate reached the person
+
+    await engine.handleMessage(message({ timestamp: T + 11 }));
+    expect(client.calls.quick).toHaveLength(afterFirst);
+  });
+});
