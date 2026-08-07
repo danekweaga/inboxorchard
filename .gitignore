@@ -1,0 +1,16 @@
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+.env
+*.local
+.DS_Store
+coverage/
+
+# Internal working notes — these describe YOUR deployment (account email, live
+# URLs, database ids) and have contained live tokens. Never publish.
+HANDOFF.md
+HANDOFF_SESSION_*.md
+
+# Real production values for the maintainer's own instance. Never publish.
+wrangler.prod.toml
