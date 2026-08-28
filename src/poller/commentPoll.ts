@@ -18,7 +18,7 @@ export async function pollComments(rt: Runtime, db: D1Database): Promise<void> {
   const sinceHour = now() - 3600;
   const openingsThisHour = await countEventsGlobal(db, "opening_sent", sinceHour);
   if (openingsThisHour >= OPENING_CAP_PER_HOUR) {
-    console.warn(`[chatmany] opening cap reached (${openingsThisHour}/hr); deferring comment poll.`);
+    console.warn(`[inbox-orchard] opening cap reached (${openingsThisHour}/hr); deferring comment poll.`);
     return;
   }
 
@@ -29,7 +29,7 @@ export async function pollComments(rt: Runtime, db: D1Database): Promise<void> {
     try {
       comments = await rt.client.getComments(mediaId);
     } catch (e) {
-      console.warn(`[chatmany] getComments(${mediaId}) failed: ${e instanceof Error ? e.message : e}`);
+      console.warn(`[inbox-orchard] getComments(${mediaId}) failed: ${e instanceof Error ? e.message : e}`);
       continue;
     }
     for (const c of comments) {
@@ -40,7 +40,7 @@ export async function pollComments(rt: Runtime, db: D1Database): Promise<void> {
         // Logged (rather than silently dropped) since this can otherwise look identical to a
         // keyword-matching failure from the outside.
         console.warn(
-          `[chatmany] comment ${c.id} on ${mediaId} has no commenter id (from=${JSON.stringify(c.from)}); skipping: "${c.text ?? ""}"`,
+          `[inbox-orchard] comment ${c.id} on ${mediaId} has no commenter id (from=${JSON.stringify(c.from)}); skipping: "${c.text ?? ""}"`,
         );
         continue;
       }

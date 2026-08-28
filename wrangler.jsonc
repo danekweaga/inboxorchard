@@ -53,7 +53,7 @@
     "MOCK_MODE": "false",
     "AI_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
     "PUBLIC_BASE_URL": "https://chatmany.danekweaga.workers.dev",
-    "PUBLIC_APP_ORIGIN": "https://chatmany.vercel.app",
+    "PUBLIC_APP_ORIGIN": "https://inboxorchard.vercel.app",
     "GOOGLE_REDIRECT_URI": "https://chatmany.danekweaga.workers.dev/auth/google/callback"
   }
 }

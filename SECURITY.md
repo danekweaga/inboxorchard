@@ -6,7 +6,7 @@ Do not open a public issue for a suspected vulnerability. Use GitHub's private v
 
 ## Deployment responsibilities
 
-DMFlow is self-hosted. The deployer is responsible for Cloudflare account security, Meta/Google/Brevo app configuration, legal notices, data retention, backups, and incident response.
+Inbox Orchard is self-hosted. The deployer is responsible for Cloudflare account security, Meta/Google/Brevo app configuration, legal notices, data retention, backups, and incident response.
 
 - Store production credentials with `wrangler secret put`; never commit `.dev.vars` or tokens.
 - Generate independent high-entropy values for `OWNER_TOKEN`, `SESSION_SECRET`, and `ENCRYPTION_KEY`.

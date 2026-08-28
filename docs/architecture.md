@@ -1,6 +1,6 @@
 # Architecture
 
-DMFlow Community Edition is a single-tenant Cloudflare application. A deployment has no dependency on a central DMFlow service.
+Inbox Orchard is a single-tenant Cloudflare application. A deployment has no dependency on a central Inbox Orchard service.
 
 ## Runtime flow
 

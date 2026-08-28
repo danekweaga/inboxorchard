@@ -54,7 +54,7 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
     // Diagnostic: Meta can silently grant fewer scopes than requested (e.g. a permission not yet
     // enabled for this app in the dashboard). Log what was actually granted vs. requested so a
     // "why can't I read comments" report can be root-caused without guessing.
-    console.log(`[chatmany] OAuth granted permissions: ${JSON.stringify(short.permissions ?? "none reported")}`);
+    console.log(`[inbox-orchard] OAuth granted permissions: ${JSON.stringify(short.permissions ?? "none reported")}`);
     const long = await exchangeForLongLivedToken(env.GRAPH_VERSION, appSecret, short.accessToken);
 
     // Fetch the profile to enforce the professional-account requirement + power the UI preview.
@@ -64,7 +64,7 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
     if (accountType === "PERSONAL") {
       return html(
         `<h1>Personal accounts aren't supported</h1>
-         <p>chatmany needs an Instagram <b>Professional</b> (Creator or Business) account.</p>
+         <p>Inbox Orchard needs an Instagram <b>Professional</b> (Creator or Business) account.</p>
          <p>In the Instagram app: <b>Settings → Account type and tools → Switch to professional account</b>, then reconnect.</p>`,
         400,
       );
@@ -81,7 +81,7 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
 
     return html(
       `<h1>Connected ✅</h1>
-       <p>@${escapeHtml(me.username ?? "your account")} is now connected to chatmany.</p>
+       <p>@${escapeHtml(me.username ?? "your account")} is now connected to Inbox Orchard.</p>
        <p>Token valid ~60 days; it auto-refreshes. You can close this tab.</p>`,
     );
   } catch (e) {

@@ -343,7 +343,7 @@ export class Engine {
   private async trySend<T>(fn: () => Promise<T>, label: string, key?: string): Promise<boolean> {
     const claimKey = key ?? null;
     if (claimKey && !(await claimSend(this.db, claimKey))) {
-      console.warn(`[chatmany] skipping ${label}: already attempted, may have delivered (${claimKey})`);
+      console.warn(`[inbox-orchard] skipping ${label}: already attempted, may have delivered (${claimKey})`);
       return true;
     }
     try {
@@ -356,11 +356,11 @@ export class Engine {
       const rejected = e instanceof InstagramApiError;
       if (rejected) {
         if (claimKey) await releaseSend(this.db, claimKey);
-        console.warn(`[chatmany] send failed (${label}), will retry: ${msg(e)}`);
+        console.warn(`[inbox-orchard] send failed (${label}), will retry: ${msg(e)}`);
         return false;
       }
       console.warn(
-        `[chatmany] send outcome unknown (${label}): ${msg(e)} — treating as delivered so it is not sent twice`,
+        `[inbox-orchard] send outcome unknown (${label}): ${msg(e)} — treating as delivered so it is not sent twice`,
       );
       return claimKey ? true : false;
     }

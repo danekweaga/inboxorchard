@@ -83,7 +83,7 @@ export class WorkersAIProvider implements AIProvider {
   async generateAutomation(prompt: string): Promise<WorkflowValidation> {
     try {
       const output = await this.run(
-        `Create a DMFlow automation JSON object using schemaVersion 1. Use only these node types:\n` +
+        `Create an Inbox Orchard automation JSON object using schemaVersion 1. Use only these node types:\n` +
         `send_text, send_buttons, send_image, send_resource, public_comment_reply, ask_question, add_tag, remove_tag, ` +
         `update_field, send_email, ai_reply, call_webhook, append_google_sheet, start_automation, subscribe_sequence, ` +
         `unsubscribe_sequence, notify_owner, delay, wait_until, wait_for_response, condition, random_split, goal_reached, end.\n` +

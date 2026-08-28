@@ -1,7 +1,7 @@
 {
-  "name": "chatmany",
+  "name": "inboxorchard",
   "version": "0.2.0",
-  "description": "DMFlow Community Edition: self-hosted Instagram DM automation for creators on Cloudflare.",
+  "description": "Inbox Orchard: self-hosted Instagram conversation automation for creators on Cloudflare.",
   "license": "MIT",
   "private": true,
   "type": "module",

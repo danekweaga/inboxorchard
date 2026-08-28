@@ -18,11 +18,11 @@ export interface Runtime {
 export async function buildRuntime(env: Env): Promise<Runtime | null> {
   const auth = await getAuth(env.DB, env.ENCRYPTION_KEY);
   if (!auth) {
-    console.warn("[chatmany] no Instagram account connected; skipping.");
+    console.warn("[inbox-orchard] no Instagram account connected; skipping.");
     return null;
   }
   if (auth.expires_at <= now()) {
-    console.warn("[chatmany] access token expired; owner must reconnect. Skipping.");
+    console.warn("[inbox-orchard] access token expired; owner must reconnect. Skipping.");
     return null;
   }
   const igUserId = auth.ig_user_id ?? "me";

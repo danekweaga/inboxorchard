@@ -200,7 +200,7 @@ async function ensureMockSender(db: D1Database): Promise<SenderRow> {
   await db.prepare(
     `INSERT INTO email_senders
       (id, provider, email, display_name, purpose, status, safety_limit, sent_window_start, sent_in_window, created_at, updated_at)
-     VALUES (?, 'mock', 'mock@dmflow.local', 'DMFlow Mock', 'Local development', 'connected', 450, ?, 0, ?, ?)`,
+     VALUES (?, 'mock', 'mock@inbox-orchard.local', 'Inbox Orchard Mock', 'Local development', 'connected', 450, ?, 0, ?, ?)`,
   ).bind(senderId, timestamp, timestamp, timestamp).run();
   const row = await db.prepare("SELECT * FROM email_senders WHERE id = ?").bind(senderId).first<SenderRow>();
   if (!row) throw new Error("Mock sender creation failed");

@@ -1,8 +1,8 @@
-# DMFlow Community Edition
+# Inbox Orchard
 
-DMFlow is an Instagram-first, self-hosted DM automation platform for creators. It turns eligible Instagram comments and inbound messages into durable conversations, tracked resource deliveries, lightweight CRM records, email subscribers, and measurable conversions.
+Inbox Orchard is an Instagram-first, self-hosted conversation automation platform for creators. It turns eligible Instagram comments and inbound messages into durable conversations, tracked resource deliveries, lightweight CRM records, email subscribers, and measurable conversions.
 
-It uses official Meta APIs only. There is no central DMFlow service: each installation owns its Cloudflare account, credentials, database, queue, files, and provider accounts.
+It uses official Meta APIs only. There is no central Inbox Orchard service: each installation owns its Cloudflare account, credentials, database, queue, files, and provider accounts.
 
 > Status: the core application, mock mode, workflow engine, inbox, CRM, resources, email queue, integrations, analytics, and administration UI are implemented. Real Meta, Gmail, Brevo, Google Sheets, and remote Cloudflare behavior must be verified with the deployer's own credentials. See [Platform limitations](docs/platform-limitations.md) before publishing an automation.
 
@@ -121,7 +121,7 @@ Update `REDIRECT_URI`, `GOOGLE_REDIRECT_URI`, and `PUBLIC_BASE_URL` in `wrangler
 npm run deploy
 ```
 
-DMFlow never creates or upgrades a paid plan. Cloudflare and provider dashboards remain the source of truth for quota and billing.
+Inbox Orchard never creates or upgrades a paid plan. Cloudflare and provider dashboards remain the source of truth for quota and billing.
 
 ### Optional Vercel frontend
 
@@ -135,9 +135,9 @@ The complete backend must remain on Cloudflare because it uses D1, Queues, cron,
 4. Register `https://YOUR-WORKER.workers.dev/auth/callback` as the OAuth redirect.
 5. Configure the webhook callback as `https://YOUR-WORKER.workers.dev/webhook`, using the exact `META_VERIFY_TOKEN` secret.
 6. Subscribe only to webhook fields your app has access to and complete Meta review/Live-mode requirements for accounts outside tester roles.
-7. Open DMFlow → Integrations → Instagram and connect the Professional account.
+7. Open Inbox Orchard → Integrations → Instagram and connect the Professional account.
 
-The send API generally requires the recipient to have contacted the professional account first. A qualifying comment can receive one private reply within Meta's allowed window; automated follow-ups require the recipient to respond and then remain within the normal messaging window. DMFlow's policy layer blocks sends it knows are ineligible. Details and current official references are in [Platform limitations](docs/platform-limitations.md).
+The send API generally requires the recipient to have contacted the professional account first. A qualifying comment can receive one private reply within Meta's allowed window; automated follow-ups require the recipient to respond and then remain within the normal messaging window. Inbox Orchard's policy layer blocks sends it knows are ineligible. Details and current official references are in [Platform limitations](docs/platform-limitations.md).
 
 ## Gmail and Google Sheets
 
@@ -145,13 +145,13 @@ The send API generally requires the recipient to have contacted the professional
 2. Enable Gmail API and Google Sheets API as needed.
 3. Register `https://YOUR-WORKER.workers.dev/auth/google/callback`.
 4. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
-5. In DMFlow → Integrations, connect Gmail or provide a Sheet ID/range and connect Sheets.
+5. In Inbox Orchard → Integrations, connect Gmail or provide a Sheet ID/range and connect Sheets.
 
 Refresh tokens are encrypted server-side. Gmail delivery uses a conservative per-sender threshold; messages remain queued when the threshold is reached. Google may require consent-screen configuration or verification depending on who uses the OAuth app.
 
 ## Brevo
 
-Set `BREVO_API_KEY` as a Worker secret or enter a key from DMFlow → Integrations with a verified sender address. The key is validated before the encrypted sender record is saved. Queue state and failures remain visible under Email.
+Set `BREVO_API_KEY` as a Worker secret or enter a key from Inbox Orchard → Integrations with a verified sender address. The key is validated before the encrypted sender record is saved. Queue state and failures remain visible under Email.
 
 ## Workers AI
 
@@ -166,7 +166,7 @@ npm run db:migrate:local
 npm run db:migrate:remote
 ```
 
-The legacy chatmany tables remain as a compatibility path. New product domains are in `0004_dmflow_platform.sql`.
+The legacy `chatmany` tables remain as a compatibility path. New product domains are in `0004_dmflow_platform.sql`.
 
 ## Backup and portability
 
@@ -193,8 +193,8 @@ Read [`SECURITY.md`](SECURITY.md) before exposing an instance publicly.
 
 ## Platform limitations
 
-Meta capabilities depend on account type, app mode, permissions, review status, recipient interaction, and messaging windows. Story fields and UI messaging features may not be available to every installation. DMFlow shows unavailable/access-dependent capabilities rather than using scraping or browser automation. See [Platform limitations](docs/platform-limitations.md).
+Meta capabilities depend on account type, app mode, permissions, review status, recipient interaction, and messaging windows. Story fields and UI messaging features may not be available to every installation. Inbox Orchard shows unavailable/access-dependent capabilities rather than using scraping or browser automation. See [Platform limitations](docs/platform-limitations.md).
 
 ## Contributing and license
 
-Issues and pull requests are welcome; read [`CONTRIBUTING.md`](CONTRIBUTING.md). DMFlow Community Edition is licensed under the [`MIT License`](LICENSE).
+Issues and pull requests are welcome; read [`CONTRIBUTING.md`](CONTRIBUTING.md). Inbox Orchard is licensed under the [`MIT License`](LICENSE).

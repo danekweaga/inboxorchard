@@ -80,7 +80,7 @@ platformApi.get("/bootstrap", async (context) => {
     ["ENCRYPTION_KEY", context.env.ENCRYPTION_KEY],
   ].filter(([, value]) => !value).map(([name]) => name);
   return context.json({
-    product: { name: "DMFlow Community", version: "0.2.0", singleTenant: true },
+    product: { name: "Inbox Orchard", version: "0.2.0", singleTenant: true },
     freeMode: isFreeMode(context.env),
     mockMode: isMockMode(context.env),
     missingSecrets,
@@ -223,14 +223,14 @@ platformApi.get("/exports/contacts.csv", async (context) => {
   const rows = await context.env.DB.prepare(
     "SELECT id, instagram_user_id, username, display_name, email, lead_score, source_content_id, first_seen_at, last_seen_at FROM contacts ORDER BY last_seen_at DESC",
   ).all<Record<string, string | number | null>>();
-  return csvResponse(rows.results ?? [], "dmflow-contacts.csv");
+  return csvResponse(rows.results ?? [], "inbox-orchard-contacts.csv");
 });
 
 platformApi.get("/exports/analytics.csv", async (context) => {
   const rows = await context.env.DB.prepare(
     "SELECT day, metric, value, estimated, updated_at FROM usage_counters ORDER BY day DESC, metric",
   ).all<Record<string, string | number | null>>();
-  return csvResponse(rows.results ?? [], "dmflow-analytics.csv");
+  return csvResponse(rows.results ?? [], "inbox-orchard-analytics.csv");
 });
 
 platformApi.get("/contacts/:id", async (context) => {

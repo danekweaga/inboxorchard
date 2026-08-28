@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve DMFlow Community Edition.
+Thanks for helping improve Inbox Orchard.
 
 ## Development
 

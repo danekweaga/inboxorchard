@@ -20,7 +20,7 @@ export async function pollMessages(rt: Runtime, db: D1Database): Promise<void> {
   try {
     conversations = await rt.client.getConversations();
   } catch (e) {
-    console.warn(`[chatmany] getConversations failed: ${e instanceof Error ? e.message : e}`);
+    console.warn(`[inbox-orchard] getConversations failed: ${e instanceof Error ? e.message : e}`);
     return;
   }
 

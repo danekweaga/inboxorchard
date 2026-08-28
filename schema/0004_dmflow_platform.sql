@@ -1,4 +1,4 @@
--- DMFlow Community Edition platform schema.
+-- Inbox Orchard platform schema.
 -- Keeps the original chatmany campaign tables intact as a compatibility path while adding
 -- normalized inbox, CRM, workflow, resource, email, AI, usage, and reliability domains.
 
