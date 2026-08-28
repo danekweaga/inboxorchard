@@ -1,9 +1,9 @@
-// Webhook mode (Section 5B, OPTIONAL — active only when MODE=webhook). Push replaces both polls.
-// GET verifies the subscription handshake; POST verifies the X-Hub-Signature-256 signature
-// (mandatory) then normalizes comment/message events into the same transport-agnostic engine.
+// Durable Instagram webhook gateway: verify, persist raw delivery, deduplicate, then enqueue.
 
-import { buildRuntime, toUnixSeconds } from "../runtime";
-import type { Env, NormalizedComment, NormalizedMessage } from "../types";
+import { id, sha256, unixNow } from "../core/id";
+import { enqueueJob } from "../queue/jobs";
+import type { Env } from "../types";
+import { metaAppSecret, metaVerifyToken } from "../types";
 import { json } from "./http";
 
 /** GET /webhook — Meta subscription verification handshake. */
@@ -11,17 +11,17 @@ export function handleWebhookVerify(env: Env, url: URL): Response {
   const mode = url.searchParams.get("hub.mode");
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
-  if (mode === "subscribe" && token && token === env.WEBHOOK_VERIFY_TOKEN && challenge) {
+  if (mode === "subscribe" && token && token === metaVerifyToken(env) && challenge) {
     return new Response(challenge, { status: 200, headers: { "content-type": "text/plain" } });
   }
   return new Response("forbidden", { status: 403 });
 }
 
-/** POST /webhook — verify signature, then dispatch normalized events to the engine. */
+/** POST /webhook — acknowledge only after the raw delivery is safely persisted. */
 export async function handleWebhookEvent(env: Env, req: Request): Promise<Response> {
   const raw = await req.text();
   const sig = req.headers.get("x-hub-signature-256");
-  if (!(await verifySignature(env.APP_SECRET, raw, sig))) {
+  if (!(await verifySignature(metaAppSecret(env), raw, sig))) {
     return new Response("invalid signature", { status: 401 });
   }
 
@@ -32,49 +32,24 @@ export async function handleWebhookEvent(env: Env, req: Request): Promise<Respon
     return json({ error: "invalid JSON" }, 400);
   }
 
-  const rt = await buildRuntime(env);
-  if (!rt) return json({ ok: true, note: "no account connected" });
-
-  for (const entry of body.entry ?? []) {
-    // Comment change events.
-    for (const change of entry.changes ?? []) {
-      if (change.field !== "comments") continue;
-      const v = change.value;
-      const igsid = v.from?.id;
-      const mediaId = v.media?.id;
-      if (!igsid || !mediaId || !v.id) continue;
-      const evt: NormalizedComment = {
-        kind: "comment",
-        comment_id: v.id,
-        igsid,
-        username: v.from?.username,
-        text: v.text ?? "",
-        media_id: mediaId,
-        timestamp: toUnixSeconds(v.timestamp),
-      };
-      await rt.engine.handleComment(evt);
-    }
-
-    // Messaging events (taps, replies, postbacks).
-    for (const m of entry.messaging ?? []) {
-      const igsid = m.sender?.id;
-      if (!igsid || igsid === rt.igUserId) continue;
-      const payload = m.postback?.payload ?? m.message?.quick_reply?.payload;
-      const evt: NormalizedMessage = {
-        kind: "message",
-        igsid,
-        text: m.message?.text ?? m.postback?.title,
-        payload,
-        timestamp: m.timestamp ? Math.floor(m.timestamp / 1000) : toUnixSeconds(undefined),
-      };
-      await rt.engine.handleMessage(evt);
-    }
+  const eventId = id("wh");
+  const idempotencyKey = await sha256(`instagram:${raw}`);
+  const externalEventId = firstExternalId(body);
+  const eventType = inferEventType(body);
+  const receivedAt = unixNow();
+  const result = await env.DB.prepare(
+    `INSERT OR IGNORE INTO webhook_events
+      (id, provider, external_event_id, idempotency_key, event_type, payload_json, received_at, status, attempt_count)
+     VALUES (?, 'instagram', ?, ?, ?, ?, ?, 'pending', 0)`,
+  ).bind(eventId, externalEventId, idempotencyKey, eventType, raw, receivedAt).run();
+  if ((result.meta.changes ?? 0) === 0) {
+    return json({ ok: true, duplicate: true });
   }
-
-  return json({ ok: true });
+  await enqueueJob(env, "webhook_event", { eventId }, { priority: 10 });
+  return json({ ok: true, accepted: true, event_id: eventId }, 202);
 }
 
-async function verifySignature(appSecret: string, raw: string, header: string | null): Promise<boolean> {
+export async function verifySignature(appSecret: string, raw: string, header: string | null): Promise<boolean> {
   if (!header || !header.startsWith("sha256=") || !appSecret) return false;
   const expected = header.slice("sha256=".length);
   const key = await crypto.subtle.importKey(
@@ -95,22 +70,29 @@ async function verifySignature(appSecret: string, raw: string, header: string | 
 // ---- webhook payload shapes (subset we consume) ----
 
 interface WebhookBody {
-  entry?: WebhookEntry[];
+  entry?: Array<{
+    changes?: Array<{ field?: string; value?: { id?: string } }>;
+    messaging?: Array<{ message?: { mid?: string }; postback?: { mid?: string } }>;
+  }>;
 }
-interface WebhookEntry {
-  changes?: Array<{ field: string; value: CommentValue }>;
-  messaging?: MessagingEvent[];
+
+function firstExternalId(body: WebhookBody): string | null {
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) if (change.value?.id) return change.value.id;
+    for (const event of entry.messaging ?? []) {
+      const value = event.message?.mid ?? event.postback?.mid;
+      if (value) return value;
+    }
+  }
+  return null;
 }
-interface CommentValue {
-  id?: string;
-  text?: string;
-  timestamp?: string;
-  from?: { id?: string; username?: string };
-  media?: { id?: string };
-}
-interface MessagingEvent {
-  sender?: { id?: string };
-  timestamp?: number;
-  message?: { text?: string; quick_reply?: { payload?: string } };
-  postback?: { payload?: string; title?: string };
+
+function inferEventType(body: WebhookBody): string {
+  for (const entry of body.entry ?? []) {
+    const field = entry.changes?.[0]?.field;
+    if (field) return field;
+    if (entry.messaging?.some((event) => event.postback)) return "messaging_postback";
+    if (entry.messaging?.length) return "messages";
+  }
+  return "unknown";
 }

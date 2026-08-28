@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "Lead Qualification",
+  "description": "Pause for a qualifying response and take the matching branch.",
+  "trigger": { "type": "keyword", "config": { "match": { "mode": "exact", "include": ["QUALIFY"], "exclude": [], "caseSensitive": false } } },
+  "startNodeId": "ask",
+  "nodes": [
+    { "id": "ask", "type": "ask_question", "label": "Ask university year", "position": { "x": 60, "y": 160 }, "config": { "text": "What year are you in?", "field": "university_year" } },
+    { "id": "condition", "type": "condition", "label": "First or second year?", "position": { "x": 350, "y": 160 }, "config": { "field": "university_year", "operator": "contains", "value": "2" } },
+    { "id": "beginner", "type": "send_resource", "label": "Send beginner guide", "position": { "x": 650, "y": 60 }, "config": { "resourceId": "SELECT_BEGINNER_RESOURCE" } },
+    { "id": "advanced", "type": "send_resource", "label": "Send internship guide", "position": { "x": 650, "y": 260 }, "config": { "resourceId": "SELECT_ADVANCED_RESOURCE" } },
+    { "id": "end", "type": "end", "label": "End", "position": { "x": 940, "y": 160 }, "config": {} }
+  ],
+  "edges": [
+    { "id": "e_ask_condition", "source": "ask", "target": "condition" },
+    { "id": "e_true", "source": "condition", "sourceHandle": "true", "label": "true", "target": "beginner" },
+    { "id": "e_false", "source": "condition", "sourceHandle": "false", "label": "false", "target": "advanced" },
+    { "id": "e_beginner_end", "source": "beginner", "target": "end" },
+    { "id": "e_advanced_end", "source": "advanced", "target": "end" }
+  ],
+  "settings": { "stopOtherAutomations": true, "priority": 100 }
+}

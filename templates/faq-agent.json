@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "FAQ Bot",
+  "description": "Draft an optional grounded response from the configured knowledge base.",
+  "trigger": { "type": "ai_intent", "config": { "intent": "Asks a creator FAQ", "examples": ["What is included?", "How does your guide work?"], "confidence": 0.75 } },
+  "startNodeId": "reply",
+  "nodes": [
+    { "id": "reply", "type": "ai_reply", "label": "Grounded AI reply", "position": { "x": 80, "y": 120 }, "config": {} },
+    { "id": "end", "type": "end", "label": "End", "position": { "x": 380, "y": 120 }, "config": {} }
+  ],
+  "edges": [{ "id": "e_reply_end", "source": "reply", "target": "end" }],
+  "settings": { "stopOtherAutomations": true, "priority": 100 }
+}

@@ -44,7 +44,7 @@ export async function handleApi(env: Env, req: Request, url: URL): Promise<Respo
 }
 
 async function statusResponse(env: Env): Promise<Response> {
-  const auth = await getAuth(env.DB);
+  const auth = await getAuth(env.DB, env.ENCRYPTION_KEY);
   if (!auth) return json({ connected: false });
   return json({
     connected: true,

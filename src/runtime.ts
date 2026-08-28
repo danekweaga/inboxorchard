@@ -16,7 +16,7 @@ export interface Runtime {
 }
 
 export async function buildRuntime(env: Env): Promise<Runtime | null> {
-  const auth = await getAuth(env.DB);
+  const auth = await getAuth(env.DB, env.ENCRYPTION_KEY);
   if (!auth) {
     console.warn("[chatmany] no Instagram account connected; skipping.");
     return null;

@@ -97,18 +97,22 @@ export class InstagramClient {
   private async get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(this.base(path));
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    url.searchParams.set("access_token", this.accessToken);
-    const res = await fetch(url.toString(), { method: "GET" });
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: `Bearer ${this.accessToken}` },
+    });
     return this.parse<T>(res);
   }
 
   /** POST JSON body; access_token as a query param (Graph convention). */
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const url = new URL(this.base(path));
-    url.searchParams.set("access_token", this.accessToken);
     const res = await fetch(url.toString(), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.accessToken}`,
+      },
       body: JSON.stringify(body),
     });
     return this.parse<T>(res);
@@ -143,6 +147,14 @@ export class InstagramClient {
     return this.post(`/${this.igUserId}/messages`, {
       recipient: { id: recipientIgsid },
       message: { text },
+    });
+  }
+
+  /** Send an image by a publicly reachable HTTPS URL. */
+  sendImage(recipientIgsid: string, imageUrl: string): Promise<{ recipient_id?: string; message_id?: string }> {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { id: recipientIgsid },
+      message: { attachment: { type: "image", payload: { url: imageUrl } } },
     });
   }
 
@@ -186,6 +198,14 @@ export class InstagramClient {
     buttons: Button[],
   ): Promise<{ message_id?: string }> {
     return this.sendButtonTemplate({ commentId }, text, buttons);
+  }
+
+  /** Send the one permitted text-only private reply for a qualifying comment. */
+  privateReply(commentId: string, text: string): Promise<{ recipient_id?: string; message_id?: string }> {
+    return this.post(`/${this.igUserId}/messages`, {
+      recipient: { comment_id: commentId },
+      message: { text },
+    });
   }
 
   // ---- public comment actions ----

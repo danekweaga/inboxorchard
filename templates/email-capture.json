@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "Capture Email",
+  "description": "Pause for an email address, then queue a reusable follow-up.",
+  "trigger": { "type": "keyword", "config": { "match": { "mode": "exact", "include": ["EMAIL"], "exclude": [], "caseSensitive": false } } },
+  "startNodeId": "ask",
+  "nodes": [
+    { "id": "ask", "type": "ask_question", "label": "Ask for email", "position": { "x": 60, "y": 120 }, "config": { "text": "Where should I email the full kit?", "field": "email" } },
+    { "id": "email", "type": "send_email", "label": "Queue follow-up", "position": { "x": 340, "y": 120 }, "config": { "templateId": "SELECT_EMAIL_TEMPLATE" } },
+    { "id": "end", "type": "end", "label": "End", "position": { "x": 620, "y": 120 }, "config": {} }
+  ],
+  "edges": [
+    { "id": "e_ask_email", "source": "ask", "target": "email" },
+    { "id": "e_email_end", "source": "email", "target": "end" }
+  ],
+  "settings": { "stopOtherAutomations": true, "priority": 100 }
+}

@@ -3,20 +3,57 @@
 /** Cloudflare bindings + vars available on the Worker environment. */
 export interface Env {
   DB: D1Database;
-  /** Static-asset binding serving the web UI from ./public. */
-  ASSETS: Fetcher;
+  /** Optional in tests; required in a deployed installation. */
+  TASK_QUEUE?: Queue;
+  RESOURCES?: R2Bucket;
+  AI?: Ai;
 
   // vars (wrangler.toml [vars])
   GRAPH_VERSION: string;
   MODE: "polling" | "webhook";
   POLL_INTERVAL_SECONDS: string;
   REDIRECT_URI: string;
+  FREE_MODE?: string;
+  MOCK_MODE?: string;
+  AI_MODEL?: string;
+  PUBLIC_BASE_URL?: string;
 
   // secrets (wrangler secret put ...)
-  APP_ID: string;
-  APP_SECRET: string;
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  META_VERIFY_TOKEN?: string;
   OWNER_TOKEN: string;
+  SESSION_SECRET?: string;
+  ENCRYPTION_KEY?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  BREVO_API_KEY?: string;
+
+  /** Backwards-compatible secret names from chatmany 0.1. */
+  APP_ID?: string;
+  APP_SECRET?: string;
   WEBHOOK_VERIFY_TOKEN?: string;
+}
+
+export function metaAppId(env: Env): string {
+  return env.META_APP_ID ?? env.APP_ID ?? "";
+}
+
+export function metaAppSecret(env: Env): string {
+  return env.META_APP_SECRET ?? env.APP_SECRET ?? "";
+}
+
+export function metaVerifyToken(env: Env): string {
+  return env.META_VERIFY_TOKEN ?? env.WEBHOOK_VERIFY_TOKEN ?? "";
+}
+
+export function isMockMode(env: Env): boolean {
+  return env.MOCK_MODE === "true";
+}
+
+export function isFreeMode(env: Env): boolean {
+  return env.FREE_MODE !== "false";
 }
 
 /** Funnel state for one person in one campaign. */
@@ -95,11 +132,14 @@ export interface NormalizedComment {
 export interface NormalizedMessage {
   kind: "message";
   igsid: string;
+  message_id?: string;
   text?: string;
   /** Postback / quick-reply payload if the transport exposes it (webhooks do; polling may not). */
   payload?: string;
   /** Email captured from a user_email quick-reply chip, if present. */
   email?: string;
+  event_type?: "message" | "story_reply" | "story_mention" | "postback" | "reaction" | "seen";
+  raw?: unknown;
   timestamp: number;
 }
 

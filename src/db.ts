@@ -3,6 +3,7 @@
 
 import type { AuthRow, Campaign, EventType, State } from "./types";
 import { validateCampaign } from "./config";
+import { openSecret, sealSecret } from "./security/crypto";
 
 export function now(): number {
   return Math.floor(Date.now() / 1000);
@@ -371,8 +372,15 @@ export async function listConversations(
 
 // ---- auth ----
 
-export async function getAuth(db: D1Database): Promise<AuthRow | null> {
-  return await db.prepare("SELECT * FROM auth WHERE id = 1").first<AuthRow>();
+export async function getAuth(db: D1Database, encryptionKey?: string): Promise<AuthRow | null> {
+  const row = await db.prepare("SELECT * FROM auth WHERE id = 1").first<AuthRow>();
+  if (!row) return null;
+  const accessToken = await openSecret(row.access_token, encryptionKey ?? "");
+  if (encryptionKey && !row.access_token.startsWith("enc:v1:")) {
+    await db.prepare("UPDATE auth SET access_token = ? WHERE id = 1")
+      .bind(await sealSecret(accessToken, encryptionKey)).run();
+  }
+  return { ...row, access_token: accessToken };
 }
 
 export async function saveAuth(
@@ -385,7 +393,9 @@ export async function saveAuth(
     account_type?: string | null;
     profile_picture_url?: string | null;
   },
+  encryptionKey?: string,
 ): Promise<void> {
+  const accessToken = encryptionKey ? await sealSecret(fields.access_token, encryptionKey) : fields.access_token;
   await db
     .prepare(
       `INSERT INTO auth (id, access_token, ig_user_id, username, account_type, profile_picture_url, expires_at, refreshed_at)
@@ -400,7 +410,7 @@ export async function saveAuth(
          refreshed_at = excluded.refreshed_at`,
     )
     .bind(
-      fields.access_token,
+      accessToken,
       fields.ig_user_id ?? null,
       fields.username ?? null,
       fields.account_type ?? null,

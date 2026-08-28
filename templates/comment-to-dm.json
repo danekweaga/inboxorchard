@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "Comment → DM",
+  "description": "Reply publicly, then send the one permitted private comment reply.",
+  "trigger": { "type": "instagram_comment", "config": { "match": { "mode": "contains_any", "include": ["GUIDE"], "exclude": ["SCAM"], "caseSensitive": false } } },
+  "startNodeId": "public",
+  "nodes": [
+    { "id": "public", "type": "public_comment_reply", "label": "Reply publicly", "position": { "x": 60, "y": 120 }, "config": { "text": "sent 🤝" } },
+    { "id": "dm", "type": "send_text", "label": "Send private reply", "position": { "x": 340, "y": 120 }, "config": { "text": "Got you — check your DMs." } },
+    { "id": "end", "type": "end", "label": "End", "position": { "x": 620, "y": 120 }, "config": {} }
+  ],
+  "edges": [
+    { "id": "e_public_dm", "source": "public", "target": "dm" },
+    { "id": "e_dm_end", "source": "dm", "target": "end" }
+  ],
+  "settings": { "stopOtherAutomations": true, "priority": 100 }
+}

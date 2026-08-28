@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "DM Keyword → Resource",
+  "description": "Deliver a tracked resource when an inbound DM contains a keyword.",
+  "trigger": { "type": "keyword", "config": { "match": { "mode": "contains_any", "include": ["RESUME", "CV", "TEMPLATE"], "exclude": ["SCAM"], "caseSensitive": false } } },
+  "startNodeId": "resource",
+  "nodes": [
+    { "id": "resource", "type": "send_resource", "label": "Send tracked resource", "position": { "x": 80, "y": 120 }, "config": { "resourceId": "SELECT_RESOURCE" } },
+    { "id": "goal", "type": "goal_reached", "label": "Resource delivered", "position": { "x": 360, "y": 120 }, "config": { "goal": "resource_delivered" } },
+    { "id": "end", "type": "end", "label": "End", "position": { "x": 640, "y": 120 }, "config": {} }
+  ],
+  "edges": [
+    { "id": "e_resource_goal", "source": "resource", "target": "goal" },
+    { "id": "e_goal_end", "source": "goal", "target": "end" }
+  ],
+  "settings": { "stopOtherAutomations": true, "priority": 100 }
+}

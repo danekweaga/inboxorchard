@@ -1,0 +1,508 @@
+import {
+  Activity, Archive, ArrowRight, AtSign, BarChart3, BookOpen, Bot, Box, Braces, Check,
+  Camera, ChevronDown, CircleHelp, Cloud, Code2, Database, Download, ExternalLink, FileText, GitBranch,
+  Gauge, Inbox, LayoutDashboard, Link2, LoaderCircle, LockKeyhole, LogOut, Mail,
+  Menu, MessageCircle, MousePointerClick, Network, PackageOpen, Play, Plus, RefreshCw, Save,
+  Search, Send, Settings, ShieldCheck, Sparkles, Tags, TestTube2, Trash2, Upload, Users, Webhook,
+  X, Zap, type LucideIcon,
+} from "lucide-react";
+import {
+  addEdge, applyEdgeChanges, applyNodeChanges, Background, Controls, MarkerType, MiniMap,
+  ReactFlow, type Connection, type Edge, type EdgeChange, type Node, type NodeChange,
+} from "@xyflow/react";
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import type { AutomationDefinition, AutomationNode, AutomationNodeType, TriggerType } from "../automation/schema";
+import { nodeTypes, triggerTypes } from "../automation/schema";
+import { api, ApiError, post, put, remove } from "./api";
+
+type PageKey = "dashboard" | "inbox" | "contacts" | "automations" | "templates" | "simulator" | "content" | "analytics" | "resources" | "email" | "ai" | "integrations" | "settings" | "usage" | "backup";
+type Notify = (message: string, kind?: "success" | "error") => void;
+
+interface Bootstrap {
+  product: { name: string; version: string; singleTenant: boolean };
+  freeMode: boolean;
+  mockMode: boolean;
+  missingSecrets: string[];
+  instagram: { connected: boolean; username?: string | null; accountType?: string | null; accountId?: string | null; expiresInDays?: number; tokenStatus?: string; webhookStatus?: string; error?: string | null };
+  capabilities: Array<{ key: string; label: string; state: string; detail: string }>;
+}
+
+interface NavItem { key: PageKey; label: string; icon: LucideIcon }
+const navGroups: Array<{ label: string; items: NavItem[] }> = [
+  { label: "Workspace", items: [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "inbox", label: "Inbox", icon: Inbox },
+    { key: "contacts", label: "Contacts", icon: Users },
+  ] },
+  { label: "Build", items: [
+    { key: "automations", label: "Automations", icon: Zap },
+    { key: "templates", label: "Templates", icon: BookOpen },
+    { key: "simulator", label: "Simulator", icon: TestTube2 },
+  ] },
+  { label: "Grow", items: [
+    { key: "content", label: "Content", icon: Camera },
+    { key: "analytics", label: "Analytics", icon: BarChart3 },
+    { key: "resources", label: "Resources", icon: PackageOpen },
+    { key: "email", label: "Email", icon: Mail },
+    { key: "ai", label: "AI Agent", icon: Bot },
+  ] },
+  { label: "System", items: [
+    { key: "integrations", label: "Integrations", icon: Network },
+    { key: "settings", label: "Settings", icon: Settings },
+    { key: "usage", label: "Usage", icon: Gauge },
+    { key: "backup", label: "Backup", icon: Archive },
+  ] },
+];
+
+export function App() {
+  const [auth, setAuth] = useState<"checking" | "in" | "out">("checking");
+  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [page, setPage] = useState<PageKey>(() => pageFromHash());
+  const [mobileNav, setMobileNav] = useState(false);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<AutomationDefinition | null>(null);
+
+  const notify: Notify = useCallback((message, kind = "success") => {
+    setToast({ message, kind });
+    window.setTimeout(() => setToast(null), 4200);
+  }, []);
+
+  const loadBootstrap = useCallback(async () => {
+    try {
+      setBootstrap(await api<Bootstrap>("/bootstrap"));
+      setAuth("in");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) setAuth("out");
+      else notify(errorMessage(error), "error");
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    api<{ authenticated: boolean }>("/session")
+      .then((result) => result.authenticated ? loadBootstrap() : setAuth("out"))
+      .catch(() => setAuth("out"));
+  }, [loadBootstrap]);
+
+  useEffect(() => {
+    const sync = () => setPage(pageFromHash());
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+
+  const navigate = (next: PageKey) => {
+    window.history.pushState(null, "", `#${next}`);
+    setPage(next);
+    setMobileNav(false);
+  };
+
+  if (auth === "checking") return <FullScreenLoader label="Opening your workspace" />;
+  if (auth === "out") return <Login onSuccess={loadBootstrap} notify={notify} />;
+  if (!bootstrap) return <FullScreenLoader label="Loading installation status" />;
+
+  const pageProps = { notify };
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${mobileNav ? "is-open" : ""}`}>
+        <div className="brand-lockup">
+          <div className="brand-mark"><MessageCircle size={19} /><Sparkles size={10} /></div>
+          <div><strong>DMFlow</strong><span>Community</span></div>
+          <button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={18} /></button>
+        </div>
+        <nav aria-label="Main navigation">
+          {navGroups.map((group) => <div className="nav-group" key={group.label}>
+            <p>{group.label}</p>
+            {group.items.map((item) => <button key={item.key} className={page === item.key ? "active" : ""} onClick={() => navigate(item.key)}>
+              <item.icon size={17} /><span>{item.label}</span>
+            </button>)}
+          </div>)}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="infra-badge"><Cloud size={16} /><div><strong>Self-hosted</strong><span>Single-tenant workspace</span></div></div>
+          <button className="ghost full" onClick={async () => { await remove("/session"); setAuth("out"); }}><LogOut size={16} /> Sign out</button>
+        </div>
+      </aside>
+      {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
+      <main className="main-area">
+        <header className="topbar">
+          <button className="icon-button menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button>
+          <div className={`status-pill ${bootstrap.instagram.connected ? "connected" : ""}`}><span />{bootstrap.instagram.connected ? `@${bootstrap.instagram.username ?? "Instagram connected"}` : "Instagram not connected"}</div>
+          <div className="topbar-actions">
+            {bootstrap.mockMode && <span className="mock-badge"><TestTube2 size={14} /> Mock mode — no real sends</span>}
+            {bootstrap.freeMode && <span className="free-badge">FREE MODE</span>}
+            <button className="icon-button" aria-label="Help" title="Documentation"><CircleHelp size={19} /></button>
+          </div>
+        </header>
+        <div className="page-canvas">
+          {page === "dashboard" && <Dashboard bootstrap={bootstrap} navigate={navigate} {...pageProps} />}
+          {page === "inbox" && <InboxPage {...pageProps} />}
+          {page === "contacts" && <ContactsPage {...pageProps} />}
+          {page === "automations" && <AutomationsPage initialDefinition={templateDraft} clearInitial={() => setTemplateDraft(null)} {...pageProps} />}
+          {page === "templates" && <TemplatesPage applyTemplate={(definition) => { setTemplateDraft(definition); navigate("automations"); }} {...pageProps} />}
+          {page === "simulator" && <SimulatorPage {...pageProps} />}
+          {page === "content" && <ContentPage {...pageProps} />}
+          {page === "analytics" && <AnalyticsPage {...pageProps} />}
+          {page === "resources" && <ResourcesPage {...pageProps} />}
+          {page === "email" && <EmailPage {...pageProps} />}
+          {page === "ai" && <AiPage {...pageProps} />}
+          {page === "integrations" && <IntegrationsPage bootstrap={bootstrap} refresh={loadBootstrap} {...pageProps} />}
+          {page === "settings" && <SettingsPage bootstrap={bootstrap} {...pageProps} />}
+          {page === "usage" && <UsagePage {...pageProps} />}
+          {page === "backup" && <BackupPage {...pageProps} />}
+        </div>
+      </main>
+      {toast && <div className={`toast ${toast.kind}`} role="status">{toast.kind === "success" ? <Check size={17} /> : <CircleHelp size={17} />}{toast.message}</div>}
+    </div>
+  );
+}
+
+function Login({ onSuccess, notify }: { onSuccess: () => Promise<void>; notify: Notify }) {
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true);
+    try { await post("/session", { token }); await onSuccess(); }
+    catch (error) { notify(errorMessage(error), "error"); }
+    finally { setBusy(false); }
+  };
+  return <main className="login-screen">
+    <section className="login-story">
+      <div className="brand-lockup light"><div className="brand-mark"><MessageCircle size={19} /><Sparkles size={10} /></div><div><strong>DMFlow</strong><span>Community</span></div></div>
+      <div className="login-copy"><span className="eyebrow">OWN YOUR AUDIENCE</span><h1>Turn every comment into a real conversation.</h1><p>Open-source Instagram DM automation, built for creators and hosted inside your own Cloudflare account.</p></div>
+      <div className="login-flow"><span>COMMENT</span><ArrowRight /><span>CONVERSATION</span><ArrowRight /><span>CONVERSION</span></div>
+    </section>
+    <section className="login-panel">
+      <form className="login-card" onSubmit={submit}>
+        <div className="login-icon"><LockKeyhole /></div><span className="eyebrow dark">OWNER ACCESS</span>
+        <h2>Welcome back</h2><p>Enter the owner token configured for this installation.</p>
+        <label>Owner token<input autoFocus type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="••••••••••••" required /></label>
+        <button className="primary full" disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />} Open workspace</button>
+        <small>Your token is exchanged for a secure, HTTP-only session cookie and is never stored in the browser.</small>
+      </form>
+    </section>
+  </main>;
+}
+
+function Dashboard({ bootstrap, navigate, notify }: { bootstrap: Bootstrap; navigate: (page: PageKey) => void; notify: Notify }) {
+  const { data, loading, reload } = useRemote<{ days: number; cards: Record<string, number>; runs: Record<string, number> }>("/dashboard", notify);
+  const cards = [
+    ["DMs received", "dmsReceived", MessageCircle], ["Automated messages", "automatedMessages", Zap],
+    ["Conversations", "conversationsStarted", Inbox], ["Unique contacts", "uniqueContacts", Users],
+    ["Links clicked", "linksClicked", MousePointerClick], ["Emails collected", "emailsCollected", AtSign],
+    ["Resources delivered", "resourcesDelivered", PackageOpen],
+  ] as const;
+  return <>
+    <PageHeader eyebrow="OVERVIEW" title="Your creator engine" description="The last 30 days, calculated from activity stored in this installation." actions={<button className="secondary" onClick={reload}><RefreshCw size={16} /> Refresh</button>} />
+    {!bootstrap.instagram.connected && <SetupBanner missing={bootstrap.missingSecrets} onConnect={() => navigate("integrations")} />}
+    <div className="metric-grid">
+      {cards.map(([label, key, Icon]) => <article className="metric-card" key={key}><div className="metric-icon"><Icon size={18} /></div><span>{label}</span><strong>{loading ? "—" : formatNumber(data?.cards[key] ?? 0)}</strong><small>Stored in your D1 database</small></article>)}
+    </div>
+    <div className="split-grid">
+      <Panel title="Automation health" subtitle="Runs by current status">
+        {!data || Object.keys(data.runs).length === 0 ? <EmptyState icon={Activity} title="No runs yet" text="Publish an automation, then test it in mock mode or wait for an Instagram interaction." action={<button className="secondary" onClick={() => navigate("automations")}>Build an automation</button>} /> :
+          <div className="status-list">{Object.entries(data.runs).map(([status, count]) => <div key={status}><span className={`status-dot ${status}`} /> <span>{humanize(status)}</span><strong>{count}</strong></div>)}</div>}
+      </Panel>
+      <Panel title="Start here" subtitle="Three steps to the first automated conversation">
+        <ol className="steps-list">
+          <li className={bootstrap.missingSecrets.length ? "" : "done"}><span>{bootstrap.missingSecrets.length ? "1" : <Check size={15} />}</span><div><strong>Configure installation secrets</strong><small>{bootstrap.missingSecrets.length ? `${bootstrap.missingSecrets.length} required value(s) missing` : "Core secrets are present"}</small></div></li>
+          <li className={bootstrap.instagram.connected ? "done" : ""}><span>{bootstrap.instagram.connected ? <Check size={15} /> : "2"}</span><div><strong>Connect Instagram</strong><small>{bootstrap.instagram.connected ? `Connected as @${bootstrap.instagram.username}` : "Professional Creator or Business account"}</small></div></li>
+          <li><span>3</span><div><strong>Publish your first flow</strong><small>Start from a creator-tested template</small></div></li>
+        </ol>
+      </Panel>
+    </div>
+  </>;
+}
+
+interface ConversationRow { id: string; username: string | null; display_name: string | null; last_message: string | null; updated_at: number; unread_count: number; source_type: string | null }
+interface MessageRow { id: string; direction: string; text: string | null; kind: string; delivery_status: string | null; created_at: number }
+interface ContactRow { id: string; username: string | null; display_name: string | null; email: string | null; instagram_user_id: string | null; first_seen_at: number; last_seen_at: number; lead_score: number }
+interface ConversationDetail { conversation: ConversationRow & { last_inbound_at?: number | null }; contact: ContactRow; messages: MessageRow[]; tags: Array<{ id: string; name: string; color: string }> }
+
+function InboxPage({ notify }: { notify: Notify }) {
+  const { data, loading, reload } = useRemote<{ conversations: ConversationRow[] }>("/inbox", notify);
+  const { data: resourceData } = useRemote<{ resources: ResourceRow[] }>("/resources", notify);
+  const { data: automationData } = useRemote<{ automations: AutomationListItem[] }>("/automations", notify);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ConversationDetail | null>(null);
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  const [search, setSearch] = useState("");
+  const [quickResource, setQuickResource] = useState("");
+  const [manualAutomation, setManualAutomation] = useState("");
+  const open = async (id: string) => { setSelected(id); try { setDetail(await api<ConversationDetail>(`/inbox/${id}`)); } catch (error) { notify(errorMessage(error), "error"); } };
+  const sendReply = async () => {
+    if (!selected || !reply.trim()) return; setSending(true);
+    try { await post(`/inbox/${selected}/reply`, { text: reply, idempotencyKey: crypto.randomUUID() }); setReply(""); await open(selected); notify("Reply sent"); }
+    catch (error) { notify(errorMessage(error), "error"); } finally { setSending(false); }
+  };
+  const suggest = async () => {
+    if (!selected) return;
+    try { const result = await post<{ suggestion: string }>(`/inbox/${selected}/suggest`); setReply(result.suggestion); notify("AI suggestion is ready"); }
+    catch (error) { notify(errorMessage(error), "error"); }
+  };
+  const sendResource = async () => { if (!selected || !quickResource) return; try { await post(`/inbox/${selected}/resource`, { resourceId: quickResource }); await open(selected); notify("Tracked resource sent"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const triggerAutomation = async () => { if (!selected || !manualAutomation) return; try { await post(`/inbox/${selected}/trigger`, { automationId: manualAutomation }); await open(selected); notify("Manual automation started"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const filtered = (data?.conversations ?? []).filter((item) => `${item.username} ${item.display_name} ${item.last_message}`.toLowerCase().includes(search.toLowerCase()));
+  return <>
+    <PageHeader eyebrow="CONVERSATIONS" title="Inbox" description="Respond personally, inspect context, or let a published workflow continue the conversation." actions={<button className="secondary" onClick={() => { reload(); if (selected) void open(selected); }}><RefreshCw size={16} /> Refresh</button>} />
+    <div className="inbox-shell">
+      <section className="conversation-list">
+        <div className="search-box"><Search size={16} /><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+        {loading ? <InlineLoader /> : filtered.length === 0 ? <EmptyState icon={Inbox} title="No conversations yet" text="New Instagram messages and qualifying comments will appear here." /> : filtered.map((item) => <button className={selected === item.id ? "selected" : ""} key={item.id} onClick={() => void open(item.id)}>
+          <Avatar name={item.display_name ?? item.username ?? "IG"} /><div><strong>{item.display_name ?? `@${item.username ?? "instagram"}`}</strong><span>{item.last_message ?? "New conversation"}</span></div><time>{relativeTime(item.updated_at)}</time>{item.unread_count > 0 && <b>{item.unread_count}</b>}
+        </button>)}
+      </section>
+      <section className="conversation-view">
+        {!detail ? <EmptyState icon={MessageCircle} title="Choose a conversation" text="Message history and creator CRM context will appear here." /> : <>
+          <header><Avatar name={detail.contact.display_name ?? detail.contact.username ?? "IG"} /><div><strong>{detail.contact.display_name ?? `@${detail.contact.username}`}</strong><span>{detail.tags.length ? detail.tags.map((tag) => tag.name).join(" · ") : "No tags yet"}</span></div><WindowBadge lastInbound={detail.conversation.last_inbound_at} /></header>
+          <div className="message-history">{detail.messages.map((message) => <div className={`message-row ${message.direction}`} key={message.id}><div><p>{message.text ?? `[${message.kind}]`}</p><span>{formatDateTime(message.created_at)} · {message.delivery_status ?? message.direction}</span></div></div>)}</div>
+          <div className="composer"><div className="quick-actions"><select aria-label="Quick resource" value={quickResource} onChange={(event) => setQuickResource(event.target.value)}><option value="">Quick resource…</option>{resourceData?.resources.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="ghost" disabled={!quickResource} onClick={() => void sendResource()}><PackageOpen size={14} /> Send</button><select aria-label="Manual automation" value={manualAutomation} onChange={(event) => setManualAutomation(event.target.value)}><option value="">Run automation…</option>{automationData?.automations.filter((item) => item.status === "published").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="ghost" disabled={!manualAutomation} onClick={() => void triggerAutomation()}><Play size={14} /> Run</button></div><textarea aria-label="Message" placeholder="Write a reply…" value={reply} onChange={(event) => setReply(event.target.value)} /><div><button className="ghost" onClick={() => void suggest()}><Sparkles size={16} /> Suggest reply</button><button className="primary" disabled={sending || !reply.trim()} onClick={() => void sendReply()}>{sending ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Send</button></div></div>
+        </>}
+      </section>
+      <aside className="contact-rail">{detail ? <><span className="eyebrow dark">CONTACT CONTEXT</span><h3>@{detail.contact.username ?? "instagram"}</h3><InfoRow label="Email" value={detail.contact.email ?? "Not captured"} /><InfoRow label="Lead score" value={String(detail.contact.lead_score ?? 0)} /><InfoRow label="First seen" value={formatDate(detail.contact.first_seen_at)} /><InfoRow label="Source" value={detail.conversation.source_type ?? "Instagram DM"} /><div className="tag-row">{detail.tags.map((tag) => <span key={tag.id} style={{ borderColor: tag.color }}>{tag.name}</span>)}</div></> : <p className="muted">Select a conversation to see contact details.</p>}</aside>
+    </div>
+  </>;
+}
+
+interface ContactDetail { contact: ContactRow; tags: Array<{ id: string; name: string; color: string }>; fields: Array<{ id: string; name: string; type: string; value_json: string | null }>; timeline: Array<{ id: string; type: string; summary: string; created_at: number }> }
+function ContactsPage({ notify }: { notify: Notify }) {
+  const [query, setQuery] = useState("");
+  const { data, loading, reload } = useRemote<{ contacts: ContactRow[] }>(`/contacts${query ? `?search=${encodeURIComponent(query)}` : ""}`, notify);
+  const [detail, setDetail] = useState<ContactDetail | null>(null);
+  const open = async (id: string) => { try { setDetail(await api<ContactDetail>(`/contacts/${id}`)); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="CREATOR CRM" title="Contacts" description="Audience context without enterprise CRM clutter." actions={<button className="secondary" onClick={reload}><RefreshCw size={16} /> Refresh</button>} />
+    <div className="contacts-layout"><Panel className="table-panel" title="Audience" subtitle="Newest interactions first"><div className="search-box wide"><Search size={16} /><input placeholder="Search username, name, or email" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
+      {loading ? <InlineLoader /> : !data?.contacts.length ? <EmptyState icon={Users} title="No contacts yet" text="Contacts appear automatically when people interact with your connected Instagram account." /> : <div className="data-table"><div className="table-head"><span>Contact</span><span>Email</span><span>Lead score</span><span>Last seen</span></div>{data.contacts.map((contact) => <button key={contact.id} onClick={() => void open(contact.id)}><span className="person-cell"><Avatar name={contact.display_name ?? contact.username ?? "IG"} /><span><strong>{contact.display_name ?? `@${contact.username ?? "instagram"}`}</strong><small>@{contact.username ?? "unknown"}</small></span></span><span>{contact.email ?? "—"}</span><span>{contact.lead_score ?? 0}</span><span>{relativeTime(contact.last_seen_at)}</span></button>)}</div>}
+    </Panel><Panel className="contact-detail-panel" title={detail ? `@${detail.contact.username ?? "instagram"}` : "Contact profile"} subtitle={detail?.contact.email ?? "Select someone to inspect their timeline"}>{!detail ? <EmptyState icon={MousePointerClick} title="Select a contact" text="Tags, custom fields, source, and chronological activity will appear here." /> : <><div className="profile-summary"><Avatar name={detail.contact.display_name ?? detail.contact.username ?? "IG"} large /><div><h3>{detail.contact.display_name ?? "Instagram contact"}</h3><span>First seen {formatDate(detail.contact.first_seen_at)}</span></div></div><div className="tag-row">{detail.tags.map((tag) => <span key={tag.id} style={{ borderColor: tag.color }}>{tag.name}</span>)}</div><div className="field-grid">{detail.fields.map((field) => <InfoRow key={field.id} label={field.name} value={field.value_json ? readableJson(field.value_json) : "Not set"} />)}</div><h4 className="section-label">Timeline</h4><div className="timeline">{detail.timeline.map((event) => <div key={event.id}><span /><div><strong>{event.summary}</strong><small>{formatDateTime(event.created_at)}</small></div></div>)}</div></>}</Panel></div>
+  </>;
+}
+
+interface AutomationListItem { id: string; name: string; description: string | null; status: string; trigger_type: string; updated_at: number; draft_version_id: string | null; published_version_id: string | null }
+interface AutomationDetail { automation: AutomationListItem; draft: { version: { id: string; version: number }; definition: AutomationDefinition } | null; published: { version: { id: string; version: number }; definition: AutomationDefinition } | null; history: Array<{ id: string; version: number; status: string; created_at: number }> }
+
+function AutomationsPage({ notify, initialDefinition, clearInitial }: { notify: Notify; initialDefinition: AutomationDefinition | null; clearInitial: () => void }) {
+  const { data, loading, reload } = useRemote<{ automations: AutomationListItem[] }>("/automations", notify);
+  const [editing, setEditing] = useState<{ id?: string; definition: AutomationDefinition } | null>(initialDefinition ? { definition: initialDefinition } : null);
+  const create = async () => { try { const result = await api<{ definition: AutomationDefinition }>("/automations/starter"); setEditing({ definition: result.definition }); } catch (error) { notify(errorMessage(error), "error"); } };
+  const edit = async (id: string) => { try { const item = await api<AutomationDetail>(`/automations/${id}`); const definition = item.draft?.definition ?? item.published?.definition; if (definition) setEditing({ id, definition }); } catch (error) { notify(errorMessage(error), "error"); } };
+  if (editing) return <FlowBuilder initial={editing.definition} automationId={editing.id} onClose={() => { setEditing(null); if (initialDefinition) clearInitial(); reload(); }} notify={notify} />;
+  return <><PageHeader eyebrow="AUTOMATION STUDIO" title="My automations" description="Build deterministic, versioned conversations that pause and resume safely." actions={<button className="primary" onClick={() => void create()}><Plus size={17} /> New automation</button>} />
+    {loading ? <InlineLoader /> : !data?.automations.length ? <Panel><EmptyState icon={Zap} title="No automations yet" text="Start with a template or describe what you want AI to build." action={<div className="button-row"><button className="primary" onClick={() => void create()}><Plus size={16} /> Create automation</button><button className="secondary" onClick={() => { window.location.hash = "templates"; }}><BookOpen size={16} /> Use template</button></div>} /></Panel> : <div className="automation-grid">{data.automations.map((item) => <article className="automation-card" key={item.id}><div className="automation-icon"><Zap size={18} /></div><div className="automation-copy"><div><span className={`status-chip ${item.status}`}>{item.status}</span><span className="trigger-chip">{humanize(item.trigger_type)}</span></div><h3>{item.name}</h3><p>{item.description || "No description"}</p><small>Updated {relativeTime(item.updated_at)}</small></div><button className="secondary" onClick={() => void edit(item.id)}>Open builder <ArrowRight size={15} /></button></article>)}</div>}
+  </>;
+}
+
+type FlowNode = Node<{ automation: AutomationNode }>;
+function FlowBuilder({ initial, automationId: initialId, onClose, notify }: { initial: AutomationDefinition; automationId?: string; onClose: () => void; notify: Notify }) {
+  const [automationId, setAutomationId] = useState(initialId);
+  const [definition, setDefinition] = useState(initial);
+  const [nodes, setNodes] = useState<FlowNode[]>(() => initial.nodes.map(flowNode));
+  const [edges, setEdges] = useState<Edge[]>(() => initial.edges.map(flowEdge));
+  const [selectedId, setSelectedId] = useState<string | null>(initial.nodes[0]?.id ?? null);
+  const [configText, setConfigText] = useState(() => JSON.stringify(initial.nodes[0]?.config ?? {}, null, 2));
+  const [issues, setIssues] = useState<Array<{ level: string; message: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  const selected = nodes.find((node) => node.id === selectedId);
+  const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => setNodes((current) => applyNodeChanges(changes, current)), []);
+  const onEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => setEdges((current) => applyEdgeChanges(changes, current)), []);
+  const onConnect = useCallback((connection: Connection) => setEdges((current) => addEdge({ ...connection, id: `edge_${crypto.randomUUID()}`, markerEnd: { type: MarkerType.ArrowClosed } }, current)), []);
+  const currentDefinition = (): AutomationDefinition => ({ ...definition, startNodeId: definition.startNodeId || nodes[0]?.id || "", nodes: nodes.map((node) => ({ ...node.data.automation, position: node.position })), edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edge.sourceHandle ?? undefined, label: typeof edge.label === "string" ? edge.label : undefined })) });
+  const validate = async () => { try { const result = await post<{ valid: boolean; issues: Array<{ level: string; message: string }> }>("/automations/validate", { definition: currentDefinition() }); setIssues(result.issues); if (result.valid) notify("Workflow is valid"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const save = async () => { setBusy(true); try { const result = await post<{ automationId: string; versionId: string; version: number }>("/automations", { automationId, definition: currentDefinition() }); setAutomationId(result.automationId); notify(`Draft v${result.version} saved`); } catch (error) { notify(errorMessage(error), "error"); } finally { setBusy(false); } };
+  const publish = async () => { setBusy(true); try { let idValue = automationId; if (!idValue) { const saved = await post<{ automationId: string }>("/automations", { definition: currentDefinition() }); idValue = saved.automationId; setAutomationId(idValue); } await post(`/automations/${idValue}/publish`, {}); notify("Automation published"); } catch (error) { notify(errorMessage(error), "error"); } finally { setBusy(false); } };
+  const addNode = (type: AutomationNodeType) => { const newNode: AutomationNode = { id: `${type}_${crypto.randomUUID().slice(0, 8)}`, type, label: humanize(type), position: { x: 180 + nodes.length * 35, y: 180 + nodes.length * 20 }, config: defaultNodeConfig(type) }; setNodes((current) => [...current, flowNode(newNode)]); setSelectedId(newNode.id); setConfigText(JSON.stringify(newNode.config, null, 2)); };
+  const updateSelected = (updates: Partial<AutomationNode>) => setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, data: { automation: { ...node.data.automation, ...updates } } } : node));
+  const applyConfig = () => { try { const value = JSON.parse(configText) as Record<string, unknown>; updateSelected({ config: value }); notify("Node configuration applied"); } catch { notify("Node configuration must be valid JSON", "error"); } };
+  return <div className="builder-page">
+    <div className="builder-top"><button className="ghost" onClick={onClose}><ArrowRight className="flip" size={16} /> Automations</button><input className="builder-name" value={definition.name} onChange={(event) => setDefinition((current) => ({ ...current, name: event.target.value }))} aria-label="Automation name" /><div><button className="secondary" onClick={() => void validate()}><ShieldCheck size={16} /> Validate</button><button className="secondary" onClick={() => void save()} disabled={busy}><Save size={16} /> Save draft</button><button className="primary" onClick={() => void publish()} disabled={busy}><Zap size={16} /> Publish</button></div></div>
+    <div className="builder-body">
+      <aside className="node-palette"><span className="eyebrow dark">NODE PALETTE</span><p>Click to add a step</p>{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}><NodeIcon type={type} />{humanize(type)}<Plus size={14} /></button>)}</aside>
+      <section className="flow-canvas"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_event, node) => { setSelectedId(node.id); setConfigText(JSON.stringify(node.data.automation.config, null, 2)); }} fitView colorMode="light"><Background color="#cbd3df" gap={22} /><MiniMap pannable zoomable /><Controls /></ReactFlow>{issues.length > 0 && <div className="validation-popover"><strong>{issues.filter((issue) => issue.level === "error").length ? "Needs attention" : "Ready to publish"}</strong>{issues.slice(0, 4).map((issue, index) => <p key={`${issue.message}-${index}`} className={issue.level}>{issue.message}</p>)}</div>}</section>
+      <aside className="config-panel"><span className="eyebrow dark">CONFIGURE</span>{selected ? <><label>Node label<input value={selected.data.automation.label} onChange={(event) => updateSelected({ label: event.target.value })} /></label><label>Node type<select value={selected.data.automation.type} onChange={(event) => updateSelected({ type: event.target.value as AutomationNodeType })}>{nodeTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><label>Configuration JSON<textarea className="code-input" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} /></label><button className="secondary full" onClick={applyConfig}><Braces size={16} /> Apply configuration</button><button className="danger-link" onClick={() => { setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(null); }}><Trash2 size={15} /> Delete node</button></> : <EmptyState icon={MousePointerClick} title="Select a node" text="Click a node on the canvas to configure it." />}
+        <hr /><label>Trigger<select value={definition.trigger.type} onChange={(event) => setDefinition((current) => ({ ...current, trigger: { ...current.trigger, type: event.target.value as TriggerType } }))}>{triggerTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><label>Start node<select value={definition.startNodeId} onChange={(event) => setDefinition((current) => ({ ...current, startNodeId: event.target.value }))}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.data.automation.label}</option>)}</select></label>
+      </aside>
+    </div>
+  </div>;
+}
+
+interface TemplateItem { id: string; category: string; definition: AutomationDefinition }
+function TemplatesPage({ notify, applyTemplate }: { notify: Notify; applyTemplate: (definition: AutomationDefinition) => void }) {
+  const { data, loading } = useRemote<{ templates: TemplateItem[] }>("/automations/templates", notify);
+  return <><PageHeader eyebrow="STARTER LIBRARY" title="Creator-tested templates" description="Portable workflow definitions you can customize, validate, simulate, and own." />
+    {loading ? <InlineLoader /> : <div className="template-grid">{(data?.templates ?? []).map((template, index) => <article className={`template-card accent-${index % 4}`} key={template.id}><div><span>{template.category}</span><NodeIcon type={template.definition.nodes[0]?.type ?? "end"} /></div><h3>{template.definition.name}</h3><p>{template.definition.description}</p><div className="mini-flow">{template.definition.nodes.slice(0, 4).map((node, nodeIndex) => <span key={node.id}>{humanize(node.type)}{nodeIndex < Math.min(3, template.definition.nodes.length - 1) && <ArrowRight size={12} />}</span>)}</div><button className="secondary full" onClick={() => applyTemplate(structuredClone(template.definition))}>Use this template <ArrowRight size={15} /></button></article>)}</div>}
+  </>;
+}
+
+function SimulatorPage({ notify }: { notify: Notify }) {
+  const { data } = useRemote<{ automations: AutomationListItem[] }>("/automations", notify);
+  const [automationId, setAutomationId] = useState("");
+  const [definition, setDefinition] = useState<AutomationDefinition | null>(null);
+  const [incoming, setIncoming] = useState("yo, can I get the guide?");
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<{ status: string; events: Array<{ nodeId?: string; type: string; summary: string }>; issues: Array<{ level: string; message: string }>; waitingNodeId?: string } | null>(null);
+  const select = async (id: string) => { setAutomationId(id); if (!id) { setDefinition(null); return; } try { const item = await api<AutomationDetail>(`/automations/${id}`); setDefinition(item.draft?.definition ?? item.published?.definition ?? null); setResult(null); } catch (error) { notify(errorMessage(error), "error"); } };
+  const run = async () => { if (!definition) return; try { setResult(await post("/automations/simulate", { definition, incomingText: incoming, responses })); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="SAFE TESTING" title="Automation simulator" description="Exercise an entire workflow without calling Instagram, email, AI, webhooks, or any external integration." actions={<button className="primary" disabled={!definition} onClick={() => void run()}><Play size={16} /> Run simulation</button>} />
+    <div className="simulator-layout"><Panel title="Test user" subtitle="Choose a draft and provide the incoming message"><label>Automation<select value={automationId} onChange={(event) => void select(event.target.value)}><option value="">Choose an automation</option>{data?.automations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Incoming message<textarea value={incoming} onChange={(event) => setIncoming(event.target.value)} /></label>{result?.waitingNodeId && <label>Test-user response<input value={responses[result.waitingNodeId] ?? ""} onChange={(event) => setResponses((current) => ({ ...current, [result.waitingNodeId!]: event.target.value }))} placeholder="Type the test user's reply, then run again" /></label>}<div className="safe-callout"><ShieldCheck size={18} /><div><strong>External actions are disabled</strong><span>The simulator only evaluates structured workflow data in memory.</span></div></div></Panel>
+      <Panel title="Execution trace" subtitle={result ? `Simulation ${result.status}` : "Run a workflow to see each decision"}>{!result ? <EmptyState icon={TestTube2} title="Ready when you are" text="The trace will show matched nodes, pauses, branches, validation errors, and generated messages." /> : <><div className="trace-list">{result.events.map((step, index) => <div key={`${step.nodeId ?? step.type}-${index}`}><span>{index + 1}</span><div><strong>{humanize(step.type)}</strong><p>{step.summary}</p><small>{step.nodeId ?? "workflow"}</small></div></div>)}</div>{result.issues.length > 0 && <div className="issue-list">{result.issues.map((issue, index) => <p className={issue.level} key={`${issue.message}-${index}`}>{issue.message}</p>)}</div>}</>}</Panel></div>
+  </>;
+}
+
+interface ContentRow { id: string; media_type: string | null; caption: string | null; permalink: string | null; timestamp: number | null; comments_count: number | null; dm_conversations: number; leads: number; clicks: number }
+function ContentPage({ notify }: { notify: Notify }) {
+  const { data, loading } = useRemote<{ content: ContentRow[] }>("/content", notify);
+  return <><PageHeader eyebrow="ATTRIBUTION" title="Instagram content" description="See which posts and Reels begin conversations and lead to measurable actions." />
+    <Panel>{loading ? <InlineLoader /> : !data?.content.length ? <EmptyState icon={Camera} title="No content attribution yet" text="Content appears when Meta events identify the source post or Reel. Metrics are never fabricated." /> : <div className="data-table content-table"><div className="table-head"><span>Content</span><span>Comments</span><span>DMs</span><span>Leads</span><span>Clicks</span></div>{data.content.map((item) => <a key={item.id} href={item.permalink ?? undefined} target="_blank" rel="noreferrer"><span><strong>{item.caption?.slice(0, 80) || humanize(item.media_type ?? "Instagram content")}</strong><small>{item.timestamp ? formatDate(item.timestamp) : item.id}</small></span><span>{item.comments_count ?? "—"}</span><span>{item.dm_conversations}</span><span>{item.leads}</span><span>{item.clicks}{item.permalink && <ExternalLink size={13} />}</span></a>)}</div>}</Panel>
+  </>;
+}
+
+function AnalyticsPage({ notify }: { notify: Notify }) {
+  const { data, loading } = useRemote<{ cards: Record<string, number>; runs: Record<string, number> }>("/dashboard?days=30", notify);
+  const totalRuns = Object.values(data?.runs ?? {}).reduce((sum, value) => sum + value, 0);
+  const completed = data?.runs.completed ?? 0;
+  return <><PageHeader eyebrow="MEASUREMENT" title="Analytics" description="First-party performance from messages, workflow runs, clicks, resources, and captured contact data." />
+    <div className="analytics-hero"><div><span>LAST 30 DAYS</span><h2>{loading ? "—" : formatNumber(totalRuns)}</h2><p>Automation runs</p></div><div className="completion-ring" style={{ "--value": `${totalRuns ? Math.round(completed / totalRuns * 100) : 0}%` } as CSSProperties}><strong>{totalRuns ? Math.round(completed / totalRuns * 100) : 0}%</strong><span>completed</span></div></div>
+    <div className="metric-grid compact">{Object.entries(data?.cards ?? {}).map(([key, value]) => <article className="metric-card" key={key}><span>{humanize(key)}</span><strong>{formatNumber(value)}</strong></article>)}</div>
+    <Panel title="What is measured" subtitle="Transparent, local attribution"><div className="measure-grid"><Measure icon={MessageCircle} title="Conversation activity" text="Inbound and outbound messages saved in D1." /><Measure icon={MousePointerClick} title="Tracked clicks" text="Redirect events tied to a contact and resource." /><Measure icon={Zap} title="Workflow outcomes" text="Run and step state from the durable engine." /></div></Panel>
+  </>;
+}
+
+interface ResourceRow { id: string; name: string; description: string | null; type: string; target_url: string | null; file_name: string | null; size_bytes: number | null; updated_at: number }
+function ResourcesPage({ notify }: { notify: Notify }) {
+  const { data, loading, reload } = useRemote<{ resources: ResourceRow[] }>("/resources", notify);
+  const [name, setName] = useState(""); const [url, setUrl] = useState(""); const [file, setFile] = useState<File | null>(null);
+  const addLink = async (event: FormEvent) => { event.preventDefault(); try { await post("/resources/link", { name, url }); setName(""); setUrl(""); reload(); notify("Resource saved"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const upload = async () => { if (!file || !name) return; const form = new FormData(); form.set("name", name); form.set("file", file); try { await api("/resources/upload", { method: "POST", body: form }); setName(""); setFile(null); reload(); notify("File uploaded to R2"); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="DELIVERABLES" title="Resource library" description="Store creator guides once, reference them by ID, and deliver measurable first-party links." />
+    <div className="split-grid resource-create"><Panel title="Save a link" subtitle="External guides, templates, or landing pages"><form onSubmit={addLink}><label>Resource name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Resume Kit" required /></label><label>Destination URL<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://…" required /></label><button className="primary"><Link2 size={16} /> Save link resource</button></form></Panel><Panel title="Upload a file" subtitle="PDF, image, text, or ZIP up to 25 MB"><label>Resource name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Interview Guide" /></label><label className="file-drop"><Upload size={22} /><span>{file ? file.name : "Choose a file"}</span><input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><button className="secondary" disabled={!file || !name} onClick={() => void upload()}><Upload size={16} /> Upload to R2</button></Panel></div>
+    <Panel title="Saved resources" subtitle="Automations deliver these through tracked links">{loading ? <InlineLoader /> : !data?.resources.length ? <EmptyState icon={PackageOpen} title="No resources yet" text="Add a link or upload a creator resource. Automation nodes reference resources by stable ID." /> : <div className="resource-grid">{data.resources.map((resource) => <article key={resource.id}><div className="resource-type"><ResourceIcon type={resource.type} /></div><div><span>{humanize(resource.type)}</span><h3>{resource.name}</h3><p>{resource.description || resource.file_name || resource.target_url}</p><small>{resource.size_bytes ? formatBytes(resource.size_bytes) : "External link"} · Updated {relativeTime(resource.updated_at)}</small></div><button className="icon-button danger" aria-label={`Archive ${resource.name}`} onClick={async () => { await remove(`/resources/${resource.id}`); reload(); notify("Resource archived"); }}><Trash2 size={16} /></button></article>)}</div>}</Panel>
+  </>;
+}
+
+interface EmailOverview { senders: Array<{ id: string; provider: string; email: string; display_name: string | null; status: string; safety_limit: number; sent_in_window: number }>; templates: Array<{ id: string; name: string; subject: string; updated_at: number }>; queue: Array<{ id: string; recipient: string; status: string; scheduled_at: number; last_error: string | null }>; sequences: Array<{ id: string; name: string; status: string; step_count: number; active_subscribers: number }> }
+function EmailPage({ notify }: { notify: Notify }) {
+  const { data, loading, reload } = useRemote<EmailOverview>("/email", notify);
+  const [tab, setTab] = useState<"queue" | "templates" | "sequences" | "senders">("queue");
+  const [template, setTemplate] = useState({ name: "", subject: "", htmlBody: "<p>Hi {{first_name}},</p>" });
+  const [sequence, setSequence] = useState({ name: "", templateId: "", delayMinutes: 0 });
+  const createTemplate = async (event: FormEvent) => { event.preventDefault(); try { await post("/email/templates", template); setTemplate({ name: "", subject: "", htmlBody: "<p>Hi {{first_name}},</p>" }); reload(); notify("Email template saved"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const createEmailSequence = async (event: FormEvent) => { event.preventDefault(); try { await post("/email/sequences", { name: sequence.name, steps: [{ delayMinutes: sequence.delayMinutes, action: { type: "email", templateId: sequence.templateId } }] }); setSequence({ name: "", templateId: "", delayMinutes: 0 }); reload(); notify("Email sequence saved"); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="OWNED AUDIENCE" title="Email" description="Queue-first delivery through your own Gmail or Brevo account, with conservative safety thresholds." />
+    <div className="tabs">{(["queue", "templates", "sequences", "senders"] as const).map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{humanize(item)}</button>)}</div>
+    {loading ? <InlineLoader /> : tab === "queue" ? <Panel title="Delivery queue" subtitle="Failed and quota-limited messages remain visible"><div className="data-table email-table"><div className="table-head"><span>Recipient</span><span>Status</span><span>Scheduled</span><span>Detail</span></div>{data?.queue.length ? data.queue.map((item) => <div key={item.id}><span>{item.recipient}</span><span><b className={`status-chip ${item.status}`}>{item.status}</b></span><span>{formatDateTime(item.scheduled_at)}</span><span>{item.last_error ?? "—"}</span></div>) : <EmptyState icon={Mail} title="The queue is empty" text="Email actions and test sends will appear here." />}</div></Panel> : tab === "templates" ? <div className="split-grid"><Panel title="Templates" subtitle="Use {{variables}} from workflow context">{data?.templates.length ? <div className="simple-list">{data.templates.map((item) => <div key={item.id}><FileText size={17} /><div><strong>{item.name}</strong><span>{item.subject}</span></div></div>)}</div> : <EmptyState icon={FileText} title="No email templates" text="Create the first reusable email below." />}</Panel><Panel title="New template"><form onSubmit={createTemplate}><label>Name<input value={template.name} onChange={(event) => setTemplate((current) => ({ ...current, name: event.target.value }))} required /></label><label>Subject<input value={template.subject} onChange={(event) => setTemplate((current) => ({ ...current, subject: event.target.value }))} required /></label><label>HTML body<textarea className="code-input short" value={template.htmlBody} onChange={(event) => setTemplate((current) => ({ ...current, htmlBody: event.target.value }))} required /></label><button className="primary"><Save size={16} /> Save template</button></form></Panel></div> : tab === "sequences" ? <div className="split-grid"><Panel title="Sequences" subtitle="Durable follow-ups with per-step delays">{data?.sequences.length ? <div className="simple-list">{data.sequences.map((item) => <div key={item.id}><Archive size={17} /><div><strong>{item.name}</strong><span>{item.step_count} step(s) · {item.active_subscribers} active · {item.status}</span></div></div>)}</div> : <EmptyState icon={Archive} title="No sequences yet" text="Create a scheduled email follow-up using one of your templates." />}</Panel><Panel title="New email sequence"><form onSubmit={createEmailSequence}><label>Name<input value={sequence.name} onChange={(event) => setSequence((current) => ({ ...current, name: event.target.value }))} required /></label><label>Email template<select value={sequence.templateId} onChange={(event) => setSequence((current) => ({ ...current, templateId: event.target.value }))} required><option value="">Choose a template</option>{data?.templates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Delay before send (minutes)<input type="number" min="0" value={sequence.delayMinutes} onChange={(event) => setSequence((current) => ({ ...current, delayMinutes: Number(event.target.value) }))} /></label><button className="primary"><Plus size={16} /> Create sequence</button></form></Panel></div> : <Panel title="Connected senders" subtitle="Credentials stay encrypted on the Worker">{data?.senders.length ? <div className="integration-list">{data.senders.map((sender) => <div key={sender.id}><div className="integration-logo"><Mail /></div><div><strong>{sender.display_name ?? sender.email}</strong><span>{sender.provider} · {sender.sent_in_window}/{sender.safety_limit} in current window</span></div><b className="status-chip connected">{sender.status}</b></div>)}</div> : <EmptyState icon={Mail} title="No email provider connected" text="Email actions remain unavailable until you connect Gmail or Brevo in Integrations." />}</Panel>}
+  </>;
+}
+
+interface AiOverview { agent: { id: string; identity_text: string; tone_text: string; goal_text: string; rules_text: string; confidence_threshold: number; autopilot_enabled: number } | null; knowledge: Array<{ id: string; type: string; title: string; content: string; enabled: number; updated_at: number }> }
+function AiPage({ notify }: { notify: Notify }) {
+  const { data, loading, reload } = useRemote<AiOverview>("/ai-agent", notify);
+  const [form, setForm] = useState({ identity: "", tone: "Helpful, concise, creator-friendly", goal: "Help people find the right resource", rules: "Never invent links. Hand off when uncertain.", confidenceThreshold: 0.75, autopilotEnabled: false });
+  const [knowledge, setKnowledge] = useState({ title: "", content: "", type: "faq" });
+  const formValue = data?.agent && !form.identity ? { identity: data.agent.identity_text, tone: data.agent.tone_text, goal: data.agent.goal_text, rules: data.agent.rules_text, confidenceThreshold: data.agent.confidence_threshold, autopilotEnabled: Boolean(data.agent.autopilot_enabled) } : form;
+  const updateForm = (update: Partial<typeof form>) => setForm({ ...formValue, ...update });
+  const save = async () => { try { await put("/ai-agent", formValue); reload(); notify("AI agent configuration saved"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const addKnowledge = async (event: FormEvent) => { event.preventDefault(); try { await post("/ai-agent/knowledge", knowledge); setKnowledge({ title: "", content: "", type: "faq" }); reload(); notify("Knowledge source added"); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="OPTIONAL INTELLIGENCE" title="AI Agent" description="Use Workers AI for suggested replies, intent classification, and structured workflow proposals. Keyword flows keep working if AI is unavailable." actions={<button className="primary" onClick={() => void save()}><Save size={16} /> Save agent</button>} />
+    {loading ? <InlineLoader /> : <div className="ai-layout"><Panel title="Agent identity" subtitle="Guardrails and creator voice"><label>Who is this agent?<textarea value={formValue.identity} onChange={(event) => updateForm({ identity: event.target.value })} placeholder="You are the DM assistant for…" /></label><label>Tone<textarea value={formValue.tone} onChange={(event) => updateForm({ tone: event.target.value })} /></label><label>Primary goal<textarea value={formValue.goal} onChange={(event) => updateForm({ goal: event.target.value })} /></label><label>Rules<textarea value={formValue.rules} onChange={(event) => updateForm({ rules: event.target.value })} /></label><label className="range-label"><span>Confidence threshold <b>{Math.round(formValue.confidenceThreshold * 100)}%</b></span><input type="range" min="0" max="1" step="0.05" value={formValue.confidenceThreshold} onChange={(event) => updateForm({ confidenceThreshold: Number(event.target.value) })} /></label><label className="toggle-row"><input type="checkbox" checked={formValue.autopilotEnabled} onChange={(event) => updateForm({ autopilotEnabled: event.target.checked })} /><span><strong>Enable AI autopilot</strong><small>Only published workflows can invoke it; policy checks still apply.</small></span></label></Panel>
+      <div><Panel title="Knowledge" subtitle="Relevant snippets are retrieved locally before generation">{data?.knowledge.length ? <div className="knowledge-list">{data.knowledge.map((item) => <article key={item.id}><div><span>{humanize(item.type)}</span><strong>{item.title}</strong></div><button className="icon-button danger" onClick={async () => { await remove(`/ai-agent/knowledge/${item.id}`); reload(); }}><Trash2 size={15} /></button></article>)}</div> : <EmptyState icon={Database} title="No knowledge yet" text="Add FAQs, product notes, or pasted reference text." />}</Panel><Panel title="Add knowledge"><form onSubmit={addKnowledge}><label>Type<select value={knowledge.type} onChange={(event) => setKnowledge((current) => ({ ...current, type: event.target.value }))}><option value="faq">FAQ</option><option value="note">Note</option><option value="product">Product</option><option value="resource">Resource</option></select></label><label>Title<input value={knowledge.title} onChange={(event) => setKnowledge((current) => ({ ...current, title: event.target.value }))} required /></label><label>Content<textarea value={knowledge.content} onChange={(event) => setKnowledge((current) => ({ ...current, content: event.target.value }))} required /></label><button className="secondary"><Plus size={16} /> Add source</button></form></Panel></div></div>}
+  </>;
+}
+
+function IntegrationsPage({ bootstrap, refresh, notify }: { bootstrap: Bootstrap; refresh: () => Promise<void>; notify: Notify }) {
+  const { data, reload } = useRemote<{ capabilities: Bootstrap["capabilities"]; connections: Array<{ id: string; provider: string; label: string | null; status: string; last_error: string | null }>; customWebhooks: Array<{ id: string; name: string; automation_id: string; active: number }> }>("/integrations", notify);
+  const { data: automationData } = useRemote<{ automations: AutomationListItem[] }>("/automations", notify);
+  const [brevo, setBrevo] = useState({ apiKey: "", email: "", displayName: "", purpose: "Creator follow-up", safetyLimit: 450 });
+  const [sheet, setSheet] = useState({ spreadsheetId: "", range: "Sheet1!A:Z" });
+  const [webhook, setWebhook] = useState({ name: "", automationId: "" });
+  const [webhookCredential, setWebhookCredential] = useState<{ url: string; secret: string } | null>(null);
+  const connectInstagram = async () => { try { const result = await post<{ url: string }>("/integrations/instagram/connect"); window.location.href = result.url; } catch (error) { notify(errorMessage(error), "error"); } };
+  const disconnectInstagram = async () => { try { await post("/integrations/instagram/disconnect"); await refresh(); notify("Instagram disconnected"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const connectBrevo = async (event: FormEvent) => { event.preventDefault(); try { await post("/email/brevo", brevo); setBrevo((current) => ({ ...current, apiKey: "" })); reload(); notify("Brevo sender connected"); } catch (error) { notify(errorMessage(error), "error"); } };
+  const connectGoogle = async (purpose: "gmail" | "sheets") => { try { const result = await post<{ url: string }>("/integrations/google/connect", { purpose, ...sheet }); window.location.assign(result.url); } catch (error) { notify(errorMessage(error), "error"); } };
+  const createWebhook = async (event: FormEvent) => { event.preventDefault(); try { const result = await post<{ url: string; secret: string }>("/integrations/custom-webhooks", webhook); setWebhookCredential(result); setWebhook({ name: "", automationId: "" }); reload(); notify("Inbound webhook created — copy its secret now"); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="CONNECTIONS" title="Integrations" description="Bring your own provider accounts. Credentials are encrypted server-side and excluded from backups." />
+    <div className="integration-stack"><Panel><div className="integration-hero"><div className="integration-logo instagram"><Camera /></div><div><span className="eyebrow dark">PRIMARY CHANNEL</span><h2>Instagram</h2><p>Official Meta API connection for a Professional Creator or Business account.</p></div><b className={`status-chip ${bootstrap.instagram.connected ? "connected" : "paused"}`}>{bootstrap.instagram.connected ? "connected" : "not connected"}</b></div>
+      {bootstrap.instagram.connected ? <div className="connection-detail"><InfoRow label="Account" value={`@${bootstrap.instagram.username ?? "instagram"}`} /><InfoRow label="Account ID" value={bootstrap.instagram.accountId ?? "Unavailable"} /><InfoRow label="Account type" value={bootstrap.instagram.accountType ?? "Professional"} /><InfoRow label="Token" value={`${bootstrap.instagram.tokenStatus ?? "unknown"} · ${bootstrap.instagram.expiresInDays ?? 0} days`} /><InfoRow label="Webhook" value={bootstrap.instagram.webhookStatus ?? "unknown"} /><div className="button-row"><button className="secondary" onClick={() => void connectInstagram()}><RefreshCw size={16} /> Reconnect</button><button className="danger-button" onClick={() => void disconnectInstagram()}><Trash2 size={16} /> Disconnect</button></div></div> : <div className="connection-empty"><p>Connect from this protected owner session. The one-time launch link expires after five minutes.</p><button className="primary" onClick={() => void connectInstagram()}><Camera size={17} /> Connect Instagram</button></div>}
+      <details className="capabilities"><summary>Instagram capability matrix <ChevronDown size={16} /></summary>{(data?.capabilities ?? bootstrap.capabilities).map((item) => <div key={item.key}><span className={`capability-mark ${item.state}`}>{item.state === "available" ? <Check size={13} /> : item.state === "unavailable" ? <X size={13} /> : <CircleHelp size={13} />}</span><div><strong>{item.label}</strong><small>{item.detail}</small></div></div>)}</details>
+    </Panel>
+    <div className="split-grid"><Panel title="Brevo" subtitle="API-based transactional email with your own key"><form onSubmit={connectBrevo}><label>API key<input type="password" value={brevo.apiKey} onChange={(event) => setBrevo((current) => ({ ...current, apiKey: event.target.value }))} required /></label><label>Sender email<input type="email" value={brevo.email} onChange={(event) => setBrevo((current) => ({ ...current, email: event.target.value }))} required /></label><label>Display name<input value={brevo.displayName} onChange={(event) => setBrevo((current) => ({ ...current, displayName: event.target.value }))} /></label><button className="secondary"><Mail size={16} /> Validate and connect</button></form></Panel><Panel title="Google services" subtitle="Gmail and Sheets use your own Google OAuth app"><button className="secondary full" onClick={() => void connectGoogle("gmail")}><Mail size={16} /> Connect Gmail sender</button><hr /><label>Spreadsheet ID<input value={sheet.spreadsheetId} onChange={(event) => setSheet((current) => ({ ...current, spreadsheetId: event.target.value }))} placeholder="From the Google Sheets URL" /></label><label>Append range<input value={sheet.range} onChange={(event) => setSheet((current) => ({ ...current, range: event.target.value }))} /></label><button className="secondary full" disabled={!sheet.spreadsheetId} onClick={() => void connectGoogle("sheets")}><Database size={16} /> Connect Google Sheets</button></Panel></div>
+    <div className="split-grid"><Panel title="Connected adapters" subtitle="Provider credentials remain encrypted">{data?.connections.length ? <div className="simple-list">{data.connections.map((connection) => <div key={connection.id}><Network size={17} /><div><strong>{connection.label ?? humanize(connection.provider)}</strong><span>{connection.status}{connection.last_error ? ` · ${connection.last_error}` : ""}</span></div></div>)}</div> : <EmptyState icon={Network} title="No additional adapters" text="Google Sheets and other provider connections will appear here." />}</Panel><Panel title="Inbound webhook" subtitle="Trigger a published webhook automation from another tool"><form onSubmit={createWebhook}><label>Name<input value={webhook.name} onChange={(event) => setWebhook((current) => ({ ...current, name: event.target.value }))} placeholder="New lead webhook" required /></label><label>Automation<select value={webhook.automationId} onChange={(event) => setWebhook((current) => ({ ...current, automationId: event.target.value }))} required><option value="">Choose an automation</option>{automationData?.automations.filter((item) => item.trigger_type === "webhook").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button className="secondary"><Webhook size={16} /> Create endpoint</button></form>{webhookCredential && <div className="credential-reveal"><strong>Copy now — the secret is shown once</strong><code>{webhookCredential.url}</code><code>{webhookCredential.secret}</code></div>}{data?.customWebhooks.map((item) => <div className="webhook-row" key={item.id}><Webhook size={15} /><span>{item.name}</span><b>{item.active ? "active" : "disabled"}</b></div>)}</Panel></div></div>
+  </>;
+}
+
+function SettingsPage({ bootstrap, notify }: { bootstrap: Bootstrap; notify: Notify }) {
+  const { data, reload } = useRemote<{ settings: Record<string, unknown> }>("/settings", notify);
+  const [key, setKey] = useState(""); const [value, setValue] = useState("");
+  const save = async (event: FormEvent) => { event.preventDefault(); try { await put(`/settings/${encodeURIComponent(key)}`, { value }); setKey(""); setValue(""); reload(); notify("Setting saved"); } catch (error) { notify(errorMessage(error), "error"); } };
+  return <><PageHeader eyebrow="INSTALLATION" title="Settings" description="Health, runtime behavior, and non-secret preferences for this self-hosted instance." />
+    <div className="split-grid"><Panel title="Installation health" subtitle={`DMFlow ${bootstrap.product.version}`}><div className="health-list"><Health ok={bootstrap.missingSecrets.length === 0} label="Required secrets" detail={bootstrap.missingSecrets.length ? `Missing: ${bootstrap.missingSecrets.join(", ")}` : "All configured"} /><Health ok={bootstrap.instagram.connected} label="Instagram connection" detail={bootstrap.instagram.connected ? `@${bootstrap.instagram.username}` : "Not connected"} /><Health ok label="Single-tenant mode" detail="Data stays in your Cloudflare account" /><Health ok={bootstrap.freeMode} label="Free Mode" detail={bootstrap.freeMode ? "Essential work is prioritized" : "Disabled by environment setting"} /></div></Panel><Panel title="Runtime priorities" subtitle="Free Mode degrades optional features first"><ol className="priority-list"><li>Webhook ingestion</li><li>DM delivery</li><li>Automation execution</li><li>Contact persistence</li><li>Email queue</li><li>Analytics</li><li>AI enrichment</li></ol></Panel></div>
+    <Panel title="Local preferences" subtitle="Non-secret JSON-compatible values stored in D1"><form className="inline-form" onSubmit={save}><label>Key<input value={key} onChange={(event) => setKey(event.target.value)} placeholder="inbox.signature" required /></label><label>Value<input value={value} onChange={(event) => setValue(event.target.value)} placeholder="— Dan" /></label><button className="secondary"><Save size={16} /> Save</button></form><div className="settings-grid">{Object.entries(data?.settings ?? {}).map(([settingKey, settingValue]) => <div key={settingKey}><strong>{settingKey}</strong><code>{JSON.stringify(settingValue)}</code></div>)}</div></Panel>
+  </>;
+}
+
+function UsagePage({ notify }: { notify: Notify }) {
+  const { data, loading, reload } = useRemote<{ days: number; metrics: Array<{ metric: string; value: number; estimated: number }>; labels: { providerValues: string } }>("/usage", notify);
+  const known = new Map(data?.metrics.map((item) => [item.metric, item]) ?? []);
+  const metrics = [["Worker requests", "worker_requests", Activity], ["Database operations", "d1_operations", Database], ["Queue operations", "queue_operations", Archive], ["AI requests", "ai_requests", Sparkles], ["Emails sent", "emails_sent", Mail], ["R2 bytes stored", "r2_bytes_stored", Box]] as const;
+  return <><PageHeader eyebrow="FREE INFRASTRUCTURE" title="Usage" description="Locally tracked estimates only. Provider dashboards remain the authority for exact quota and billing data." actions={<button className="secondary" onClick={reload}><RefreshCw size={16} /> Refresh</button>} />
+    <div className="usage-grid">{metrics.map(([label, key, Icon]) => <article key={key}><Icon size={19} /><span>{label}</span><strong>{loading ? "—" : key === "r2_bytes_stored" ? formatBytes(known.get(key)?.value ?? 0) : formatNumber(known.get(key)?.value ?? 0)}</strong><small>{known.get(key)?.estimated === 0 ? "Exact local count" : "Locally tracked estimate"}</small></article>)}</div>
+    <div className="safe-callout wide"><ShieldCheck size={20} /><div><strong>No automatic paid overages</strong><span>DMFlow never purchases capacity, upgrades a provider plan, or silently creates paid infrastructure. Free Mode preserves core ingestion and automation before optional AI and advanced analytics.</span></div></div>
+  </>;
+}
+
+function BackupPage({ notify }: { notify: Notify }) {
+  const [busy, setBusy] = useState(false);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const download = async () => { setBusy(true); try { const backup = await api<Record<string, unknown>>("/backup"); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const href = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = href; anchor.download = `dmflow-backup-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(href); notify("Secret-free backup downloaded"); } catch (error) { notify(errorMessage(error), "error"); } finally { setBusy(false); } };
+  const restore = async () => { if (!backupFile || !window.confirm("Merge this configuration backup into this installation? Existing rows with the same IDs will be replaced.")) return; setBusy(true); try { const payload = JSON.parse(await backupFile.text()) as unknown; const result = await post<{ restored: Record<string, number> }>("/backup/restore", payload); const restored = Object.values(result.restored).reduce((sum, value) => sum + value, 0); notify(`Restored ${restored} configuration records`); setBackupFile(null); } catch (error) { notify(errorMessage(error), "error"); } finally { setBusy(false); } };
+  return <><PageHeader eyebrow="DATA OWNERSHIP" title="Backup & portability" description="Export a readable configuration snapshot from your installation. Provider credentials are deliberately excluded." />
+    <div className="backup-card"><div className="backup-illustration"><Database size={40} /><Download size={24} /></div><div><span className="eyebrow dark">CONFIGURATION BACKUP</span><h2>Your workflows. Your audience. Your infrastructure.</h2><p>The export includes automations and immutable versions, tags, custom fields, resource metadata, email templates, AI agent configuration, knowledge, and settings.</p><ul><li><Check size={15} /> Portable JSON</li><li><Check size={15} /> No access tokens</li><li><Check size={15} /> No provider secrets</li></ul><button className="primary" disabled={busy} onClick={() => void download()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />} Download backup</button></div></div>
+    <Panel title="Portable automation definitions" subtitle="Community templates use the same versioned schema"><div className="measure-grid"><Measure icon={Code2} title="Structured JSON" text="No custom application code is embedded in a workflow." /><Measure icon={ShieldCheck} title="Validated" text="Unknown node types and unsafe URLs are rejected." /><Measure icon={GitBranch} title="Versioned" text="Published runs retain their immutable definition." /></div></Panel>
+    <Panel title="Restore configuration" subtitle="Merge a DMFlow schema v1 backup; secrets and uploaded R2 file bytes are never imported"><label className="file-drop"><Upload size={22} /><span>{backupFile ? backupFile.name : "Choose a DMFlow backup JSON file"}</span><input type="file" accept="application/json,.json" onChange={(event) => setBackupFile(event.target.files?.[0] ?? null)} /></label><button className="secondary" disabled={!backupFile || busy} onClick={() => void restore()}><Upload size={16} /> Validate and restore</button></Panel>
+  </>;
+}
+
+function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
+  return <header className="page-header"><div><span className="eyebrow dark">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{actions && <div className="page-actions">{actions}</div>}</header>;
+}
+
+function Panel({ title, subtitle, children, className = "" }: { title?: string; subtitle?: string; children: ReactNode; className?: string }) {
+  return <section className={`panel ${className}`}>{title && <header><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div></header>}<div className="panel-body">{children}</div></section>;
+}
+
+function EmptyState({ icon: Icon, title, text, action }: { icon: LucideIcon; title: string; text: string; action?: ReactNode }) {
+  return <div className="empty-state"><div><Icon size={22} /></div><h3>{title}</h3><p>{text}</p>{action}</div>;
+}
+
+function SetupBanner({ missing, onConnect }: { missing: string[]; onConnect: () => void }) {
+  return <div className="setup-banner"><div className="setup-art"><Camera size={27} /><span><Zap size={15} /></span></div><div><span className="eyebrow">FIRST-RUN SETUP</span><h2>Instagram isn’t connected yet.</h2><p>{missing.length ? `Configure ${missing.join(", ")} before starting OAuth.` : "Connect a Professional account to start receiving DMs and comment events."}</p></div><button className="light-button" onClick={onConnect}>Open integrations <ArrowRight size={16} /></button></div>;
+}
+
+function Avatar({ name, large = false }: { name: string; large?: boolean }) { const initials = name.replace("@", "").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(); return <span className={`avatar ${large ? "large" : ""}`}>{initials || "IG"}</span>; }
+function WindowBadge({ lastInbound }: { lastInbound?: number | null }) { const [now] = useState(() => Math.floor(Date.now() / 1000)); const seconds = lastInbound ? lastInbound + 86400 - now : 0; return <span className={`window-badge ${seconds > 0 ? "open" : "closed"}`}><span />{seconds > 0 ? `Open · ${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m` : "Window closed"}</span>; }
+function InfoRow({ label, value }: { label: string; value: string }) { return <div className="info-row"><span>{label}</span><strong>{value}</strong></div>; }
+function Health({ ok, label, detail }: { ok: boolean; label: string; detail: string }) { return <div><span className={ok ? "ok" : "warn"}>{ok ? <Check size={14} /> : <CircleHelp size={14} />}</span><div><strong>{label}</strong><small>{detail}</small></div></div>; }
+function Measure({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) { return <div className="measure"><Icon size={19} /><div><strong>{title}</strong><p>{text}</p></div></div>; }
+function InlineLoader() { return <div className="inline-loader"><LoaderCircle className="spin" size={20} /> Loading live data…</div>; }
+function FullScreenLoader({ label }: { label: string }) { return <div className="full-loader"><div className="brand-mark"><MessageCircle size={19} /><Sparkles size={10} /></div><LoaderCircle className="spin" /><span>{label}</span></div>; }
+function ResourceIcon({ type }: { type: string }) { return type === "link" ? <Link2 /> : type === "image" ? <Camera /> : <FileText />; }
+function NodeIcon({ type }: { type: AutomationNodeType }) { if (type.startsWith("send") || type === "ask_question") return <Send size={15} />; if (type === "condition" || type === "random_split") return <GitBranch size={15} />; if (type.includes("webhook") || type === "call_webhook") return <Webhook size={15} />; if (type.includes("ai")) return <Sparkles size={15} />; if (type.includes("tag")) return <Tags size={15} />; if (type === "end") return <Check size={15} />; return <Zap size={15} />; }
+
+function flowNode(node: AutomationNode): FlowNode { return { id: node.id, position: node.position, data: { automation: node }, type: "default", style: { border: "1px solid #d9dfe9", borderRadius: 14, padding: 12, color: "#14213d", fontWeight: 700, boxShadow: "0 8px 24px rgba(24,32,55,.08)", minWidth: 160 } }; }
+function flowEdge(edge: AutomationDefinition["edges"][number]): Edge { return { ...edge, markerEnd: { type: MarkerType.ArrowClosed }, style: { stroke: "#6d5dfc", strokeWidth: 2 }, labelStyle: { fill: "#4b5568", fontWeight: 700 } }; }
+function defaultNodeConfig(type: AutomationNodeType): Record<string, unknown> { if (type === "send_text") return { text: "Write your message…" }; if (type === "ask_question") return { text: "What would you like to ask?", field: "answer" }; if (type === "delay") return { seconds: 60 }; if (type === "condition") return { field: "answer", operator: "equals", value: "yes" }; if (type === "public_comment_reply") return { text: "sent 🤝" }; return {}; }
+
+function useRemote<T>(path: string, notify: Notify) {
+  const [data, setData] = useState<T | null>(null); const [loading, setLoading] = useState(true);
+  const reload = useCallback(() => { setLoading(true); api<T>(path).then(setData).catch((error) => notify(errorMessage(error), "error")).finally(() => setLoading(false)); }, [path, notify]);
+  useEffect(() => { let active = true; api<T>(path).then((result) => { if (active) setData(result); }).catch((error) => { if (active) notify(errorMessage(error), "error"); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [path, notify]);
+  return { data, loading, reload };
+}
+
+function pageFromHash(): PageKey { const value = window.location.hash.replace("#", "") as PageKey; return navGroups.flatMap((group) => group.items).some((item) => item.key === value) ? value : "dashboard"; }
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : "Something went wrong"; }
+function humanize(value: string): string { return value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").replaceAll("→", " → ").replace(/^./, (letter) => letter.toUpperCase()); }
+function formatNumber(value: number): string { return new Intl.NumberFormat().format(value); }
+function formatDate(timestamp: number): string { return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(timestamp * 1000)); }
+function formatDateTime(timestamp: number): string { return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(timestamp * 1000)); }
+function relativeTime(timestamp: number): string { const delta = Math.max(0, Math.floor(Date.now() / 1000) - timestamp); if (delta < 60) return "now"; if (delta < 3600) return `${Math.floor(delta / 60)}m`; if (delta < 86400) return `${Math.floor(delta / 3600)}h`; return `${Math.floor(delta / 86400)}d`; }
+function formatBytes(bytes: number): string { if (!bytes) return "0 B"; const units = ["B", "KB", "MB", "GB"]; const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024))); return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`; }
+function readableJson(value: string): string { try { const parsed = JSON.parse(value) as unknown; return typeof parsed === "string" ? parsed : JSON.stringify(parsed); } catch { return value; } }
