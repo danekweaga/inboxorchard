@@ -17,6 +17,7 @@ export interface Env {
   MOCK_MODE?: string;
   AI_MODEL?: string;
   PUBLIC_BASE_URL?: string;
+  PUBLIC_APP_ORIGIN?: string;
 
   // secrets (wrangler secret put ...)
   META_APP_ID?: string;

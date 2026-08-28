@@ -123,6 +123,10 @@ npm run deploy
 
 DMFlow never creates or upgrades a paid plan. Cloudflare and provider dashboards remain the source of truth for quota and billing.
 
+### Optional Vercel frontend
+
+The complete backend must remain on Cloudflare because it uses D1, Queues, cron, R2, and Workers AI bindings. [`vercel.json`](vercel.json) can host the built React client on Vercel and securely reverse-proxy application routes to your Worker. Replace its Worker hostname and set the same Vercel production origin in `PUBLIC_APP_ORIGIN` before deployment. This is a frontend edge only—not a replacement for the Cloudflare backend.
+
 ## Meta / Instagram setup
 
 1. Create a Meta app using the Instagram messaging/content use case.

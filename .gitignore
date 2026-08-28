@@ -15,3 +15,4 @@ HANDOFF_SESSION_*.md
 
 # Real production values for the maintainer's own instance. Never publish.
 wrangler.prod.toml
+.vercel

@@ -19,12 +19,11 @@
       "migrations_dir": "schema"
     }
   ],
-  "r2_buckets": [
-    {
-      "binding": "RESOURCES",
-      "bucket_name": "dmflow-resources"
-    }
-  ],
+  // R2 is optional at runtime. Enable R2 in the account, create the bucket, then
+  // uncomment this binding to support uploaded files. Link resources work without it.
+  // "r2_buckets": [
+  //   { "binding": "RESOURCES", "bucket_name": "dmflow-resources" }
+  // ],
   "ai": {
     "binding": "AI"
   },
@@ -49,11 +48,12 @@
     "GRAPH_VERSION": "v26.0",
     "MODE": "webhook",
     "POLL_INTERVAL_SECONDS": "90",
-    "REDIRECT_URI": "https://YOUR-WORKER.workers.dev/auth/callback",
+    "REDIRECT_URI": "https://chatmany.danekweaga.workers.dev/auth/callback",
     "FREE_MODE": "true",
     "MOCK_MODE": "false",
     "AI_MODEL": "@cf/meta/llama-3.1-8b-instruct-fast",
-    "PUBLIC_BASE_URL": "",
-    "GOOGLE_REDIRECT_URI": "https://YOUR-WORKER.workers.dev/auth/google/callback"
+    "PUBLIC_BASE_URL": "https://chatmany.danekweaga.workers.dev",
+    "PUBLIC_APP_ORIGIN": "https://chatmany.vercel.app",
+    "GOOGLE_REDIRECT_URI": "https://chatmany.danekweaga.workers.dev/auth/google/callback"
   }
 }

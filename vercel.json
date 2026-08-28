@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/client",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://chatmany.danekweaga.workers.dev/api/:path*" },
+    { "source": "/auth/:path*", "destination": "https://chatmany.danekweaga.workers.dev/auth/:path*" },
+    { "source": "/hooks/:path*", "destination": "https://chatmany.danekweaga.workers.dev/hooks/:path*" },
+    { "source": "/l/:path*", "destination": "https://chatmany.danekweaga.workers.dev/l/:path*" },
+    { "source": "/r/:path*", "destination": "https://chatmany.danekweaga.workers.dev/r/:path*" },
+    { "source": "/webhook", "destination": "https://chatmany.danekweaga.workers.dev/webhook" },
+    { "source": "/health", "destination": "https://chatmany.danekweaga.workers.dev/health" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    }
+  ]
+}

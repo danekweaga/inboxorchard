@@ -21,10 +21,14 @@ export async function verifySession(value: string | undefined, secret: string, n
   return timingSafeEqual(signature, await hmac(payload, secret));
 }
 
-export function requestOriginAllowed(request: Request): boolean {
+export function requestOriginAllowed(request: Request, configuredOrigins = ""): boolean {
   const method = request.method.toUpperCase();
   if (["GET", "HEAD", "OPTIONS"].includes(method)) return true;
   const origin = request.headers.get("origin");
   if (!origin) return false;
-  return origin === new URL(request.url).origin;
+  const allowed = new Set([
+    new URL(request.url).origin,
+    ...configuredOrigins.split(",").map((value) => value.trim()).filter(Boolean),
+  ]);
+  return allowed.has(origin);
 }

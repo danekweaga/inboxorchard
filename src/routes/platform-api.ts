@@ -60,7 +60,7 @@ platformApi.use("*", async (context, next) => {
   const bearerAllowed = Boolean(context.env.OWNER_TOKEN) && timingSafeEqual(bearer, context.env.OWNER_TOKEN);
   const cookieAllowed = await verifySession(getCookie(context, SESSION_COOKIE), context.env.SESSION_SECRET ?? "");
   if (!bearerAllowed && !cookieAllowed) return jsonError("Unauthorized", 401);
-  if (cookieAllowed && !bearerAllowed && !requestOriginAllowed(context.req.raw)) return jsonError("Cross-origin write rejected", 403);
+  if (cookieAllowed && !bearerAllowed && !requestOriginAllowed(context.req.raw, context.env.PUBLIC_APP_ORIGIN)) return jsonError("Cross-origin write rejected", 403);
   await next();
 });
 
