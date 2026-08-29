@@ -86,6 +86,7 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
         const payload = messageEvent.postback?.payload ?? messageEvent.message?.quick_reply?.payload;
         const text = messageEvent.message?.text ?? messageEvent.postback?.title;
         const messageId = messageEvent.message?.mid ?? messageEvent.postback?.mid;
+        const storyId = messageEvent.message?.reply_to?.story?.id;
         const eventType = messageEvent.postback
           ? "postback"
           : messageEvent.message?.is_story_mention
@@ -97,6 +98,7 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
           instagramUserId,
           occurredAt: timestamp,
           sourceType: eventType,
+          sourceExternalId: storyId,
         });
         const persisted = await persistInboundMessage(env.DB, {
           contact,
@@ -118,13 +120,15 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
           event_type: eventType,
           raw: messageEvent,
         };
+        const triggerType = eventType === "story_reply" || eventType === "story_mention" ? eventType : "instagram_dm";
         const started = await automations.handleTrigger({
-          type: "instagram_dm",
+          type: triggerType,
           eventId: `message:${messageId ?? id("inbound")}`,
           contactId: contact.id,
           conversationId: conversation.id,
           instagramUserId,
           text,
+          mediaId: storyId,
           timestamp,
         });
         if (started.length === 0 && runtime) await runtime.engine.handleMessage(normalized);
@@ -132,7 +136,7 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
         await env.DB.prepare(
           `INSERT INTO audit_logs (id, action, entity_type, entity_id, safe_metadata_json, created_at)
            VALUES (?, 'inbound_message_ingested', 'message', ?, ?, ?)`,
-        ).bind(id("audit"), persisted.message.id, JSON.stringify({ eventType }), unixNow()).run();
+        ).bind(id("audit"), persisted.message.id, JSON.stringify({ eventType, storyId }), unixNow()).run();
       }
     }
     await env.DB.prepare(

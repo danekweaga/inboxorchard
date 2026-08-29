@@ -310,18 +310,133 @@ function FlowBuilder({ initial, automationId: initialId, onClose, notify }: { in
   const publish = async () => { setBusy(true); try { let idValue = automationId; if (!idValue) { const saved = await post<{ automationId: string }>("/automations", { definition: currentDefinition() }); idValue = saved.automationId; setAutomationId(idValue); } await post(`/automations/${idValue}/publish`, {}); notify("Automation published"); } catch (error) { notify(errorMessage(error), "error"); } finally { setBusy(false); } };
   const addNode = (type: AutomationNodeType) => { const newNode: AutomationNode = { id: `${type}_${crypto.randomUUID().slice(0, 8)}`, type, label: humanize(type), position: { x: 180 + nodes.length * 35, y: 180 + nodes.length * 20 }, config: defaultNodeConfig(type) }; setNodes((current) => [...current, flowNode(newNode)]); setSelectedId(newNode.id); setConfigText(JSON.stringify(newNode.config, null, 2)); };
   const updateSelected = (updates: Partial<AutomationNode>) => setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, data: { automation: { ...node.data.automation, ...updates } } } : node));
+  const updateSelectedConfig = (config: Record<string, unknown>) => { updateSelected({ config }); setConfigText(JSON.stringify(config, null, 2)); };
   const applyConfig = () => { try { const value = JSON.parse(configText) as Record<string, unknown>; updateSelected({ config: value }); notify("Node configuration applied"); } catch { notify("Node configuration must be valid JSON", "error"); } };
   return <div className="builder-page">
     <div className="builder-top"><button className="ghost" onClick={onClose}><ArrowRight className="flip" size={16} /> Automations</button><input className="builder-name" value={definition.name} onChange={(event) => setDefinition((current) => ({ ...current, name: event.target.value }))} aria-label="Automation name" /><div><button className="secondary" onClick={() => void validate()}><ShieldCheck size={16} /> Validate</button><button className="secondary" onClick={() => void save()} disabled={busy}><Save size={16} /> Save draft</button><button className="primary" onClick={() => void publish()} disabled={busy}><Zap size={16} /> Publish</button></div></div>
     <div className="builder-body">
       <aside className="node-palette"><span className="eyebrow dark">NODE PALETTE</span><p>Click to add a step</p>{nodeTypes.map((type) => <button key={type} onClick={() => addNode(type)}><NodeIcon type={type} />{humanize(type)}<Plus size={14} /></button>)}</aside>
       <section className="flow-canvas"><ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_event, node) => { setSelectedId(node.id); setConfigText(JSON.stringify(node.data.automation.config, null, 2)); }} fitView colorMode="light"><Background color="#cbd3df" gap={22} /><MiniMap pannable zoomable /><Controls /></ReactFlow>{issues.length > 0 && <div className="validation-popover"><strong>{issues.filter((issue) => issue.level === "error").length ? "Needs attention" : "Ready to publish"}</strong>{issues.slice(0, 4).map((issue, index) => <p key={`${issue.message}-${index}`} className={issue.level}>{issue.message}</p>)}</div>}</section>
-      <aside className="config-panel"><span className="eyebrow dark">CONFIGURE</span>{selected ? <><label>Node label<input value={selected.data.automation.label} onChange={(event) => updateSelected({ label: event.target.value })} /></label><label>Node type<select value={selected.data.automation.type} onChange={(event) => updateSelected({ type: event.target.value as AutomationNodeType })}>{nodeTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><label>Configuration JSON<textarea className="code-input" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} /></label><button className="secondary full" onClick={applyConfig}><Braces size={16} /> Apply configuration</button><button className="danger-link" onClick={() => { setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(null); }}><Trash2 size={15} /> Delete node</button></> : <EmptyState icon={MousePointerClick} title="Select a node" text="Click a node on the canvas to configure it." />}
-        <hr /><label>Trigger<select value={definition.trigger.type} onChange={(event) => setDefinition((current) => ({ ...current, trigger: { ...current.trigger, type: event.target.value as TriggerType } }))}>{triggerTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><label>Start node<select value={definition.startNodeId} onChange={(event) => setDefinition((current) => ({ ...current, startNodeId: event.target.value }))}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.data.automation.label}</option>)}</select></label>
+      <aside className="config-panel"><span className="eyebrow dark">CONFIGURE JOURNEY</span>
+        <section className="config-section"><h3>1. When this happens</h3><label>Instagram trigger<select value={definition.trigger.type} onChange={(event) => setDefinition((current) => ({ ...current, trigger: { type: event.target.value as TriggerType, config: defaultTriggerConfig(event.target.value as TriggerType) } }))}>{triggerTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><TriggerConfigFields trigger={definition.trigger} notify={notify} onChange={(config) => setDefinition((current) => ({ ...current, trigger: { ...current.trigger, config } }))} /></section>
+        <hr />{selected ? <section className="config-section"><h3>2. Configure selected step</h3><label>Step name<input value={selected.data.automation.label} onChange={(event) => updateSelected({ label: event.target.value })} /></label><label>What this step does<select value={selected.data.automation.type} onChange={(event) => { const type = event.target.value as AutomationNodeType; const config = defaultNodeConfig(type); updateSelected({ type, config }); setConfigText(JSON.stringify(config, null, 2)); }}>{nodeTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><NodeConfigFields node={selected.data.automation} notify={notify} onChange={updateSelectedConfig} /><details className="advanced-config"><summary><Braces size={14} /> Advanced JSON</summary><label>Configuration JSON<textarea className="code-input short" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} /></label><button className="secondary full" onClick={applyConfig}>Apply advanced configuration</button></details><button className="danger-link" onClick={() => { setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(null); }}><Trash2 size={15} /> Delete step</button></section> : <EmptyState icon={MousePointerClick} title="Select a step" text="Click a step on the canvas to edit its message, resource, or action." />}
+        <hr /><label>Journey starts with<select value={definition.startNodeId} onChange={(event) => setDefinition((current) => ({ ...current, startNodeId: event.target.value }))}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.data.automation.label}</option>)}</select></label>
       </aside>
     </div>
   </div>;
 }
+
+interface InstagramStory { id: string; media_type?: string; media_url?: string; thumbnail_url?: string; permalink?: string; timestamp?: string }
+function StoryTriggerConfig({ trigger, notify, onChange }: { trigger: AutomationDefinition["trigger"]; notify: Notify; onChange: (config: Record<string, unknown>) => void }) {
+  const { data, loading, reload } = useRemote<{ stories: InstagramStory[] }>("/instagram/stories", notify);
+  const selectedStoryId = Array.isArray(trigger.config.mediaIds) && typeof trigger.config.mediaIds[0] === "string" ? trigger.config.mediaIds[0] : "";
+  const selectStory = (storyId: string) => onChange({ ...trigger.config, mediaIds: storyId ? [storyId] : [] });
+  return <div className="story-trigger-config">
+    <div className="story-trigger-heading"><div><strong>Story source</strong><span>Choose the Story this automation should answer.</span></div><button type="button" className="icon-button" onClick={reload} aria-label="Refresh Stories"><RefreshCw size={14} /></button></div>
+    {loading ? <InlineLoader /> : <div className="story-picker">
+      <button type="button" className={!selectedStoryId ? "selected" : ""} onClick={() => selectStory("")}><span className="story-all"><Camera size={17} /></span><small>Any active Story</small></button>
+      {(data?.stories ?? []).map((story) => {
+        const preview = story.thumbnail_url ?? (story.media_type !== "VIDEO" ? story.media_url : undefined);
+        return <button type="button" key={story.id} className={selectedStoryId === story.id ? "selected" : ""} onClick={() => selectStory(story.id)} title={story.id}>{preview ? <img src={preview} alt="Instagram Story" /> : <span className="story-all"><Camera size={17} /></span>}<small>{story.timestamp ? new Date(story.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : story.id.slice(-8)}</small></button>;
+      })}
+    </div>}
+    {!loading && !(data?.stories.length) && <p className="story-picker-note">No active Stories were returned. Paste a Story ID below for an expired or unlisted Story.</p>}
+    <label>Story ID fallback<input value={selectedStoryId} onChange={(event) => selectStory(event.target.value.trim())} placeholder="All Stories when empty" /></label>
+    <small className="story-trigger-help">Only replies or mentions tied to the selected Story will start this automation. Story access still depends on Meta delivering the event.</small>
+  </div>;
+}
+
+interface InstagramMedia { id: string; media_type?: string; media_url?: string; thumbnail_url?: string; permalink?: string; caption?: string; timestamp?: string }
+type ConfigChange = (config: Record<string, unknown>) => void;
+
+function TriggerConfigFields({ trigger, notify, onChange }: { trigger: AutomationDefinition["trigger"]; notify: Notify; onChange: ConfigChange }) {
+  if (trigger.type === "story_reply" || trigger.type === "story_mention") return <StoryTriggerConfig trigger={trigger} notify={notify} onChange={onChange} />;
+  if (trigger.type === "instagram_comment") return <><InstagramMediaPicker trigger={trigger} notify={notify} onChange={onChange} /><TextMatchFields config={trigger.config} noun="comment" onChange={onChange} /></>;
+  if (trigger.type === "instagram_dm" || trigger.type === "keyword") return <TextMatchFields config={trigger.config} noun="DM" onChange={onChange} />;
+  if (trigger.type === "ai_intent") return <div className="guided-fields"><label>Intent name<input value={stringValue(trigger.config.intent)} onChange={(event) => onChange({ ...trigger.config, intent: event.target.value })} placeholder="Wants the free guide" /></label><label>Example messages<textarea value={listText(trigger.config.examples)} onChange={(event) => onChange({ ...trigger.config, examples: parseList(event.target.value) })} placeholder={"Can I get the guide?\nSend me the template"} /></label><label>Minimum confidence<input type="number" min="0" max="1" step="0.05" value={numberValue(trigger.config.confidence, .75)} onChange={(event) => onChange({ ...trigger.config, confidence: Number(event.target.value) })} /></label></div>;
+  if (trigger.type === "scheduled") return <div className="guided-fields"><label>Run every (minutes)<input type="number" min="1" value={numberValue(trigger.config.intervalMinutes, 60)} onChange={(event) => onChange({ ...trigger.config, intervalMinutes: Math.max(1, Number(event.target.value)) })} /></label></div>;
+  return <p className="config-note">This trigger starts from {humanize(trigger.type)} events. Use Advanced JSON on individual steps only when you need an uncommon setting.</p>;
+}
+
+function InstagramMediaPicker({ trigger, notify, onChange }: { trigger: AutomationDefinition["trigger"]; notify: Notify; onChange: ConfigChange }) {
+  const { data, loading, reload } = useRemote<{ media: InstagramMedia[] }>("/instagram/media", notify);
+  const selected = Array.isArray(trigger.config.mediaIds) ? trigger.config.mediaIds.filter((id): id is string => typeof id === "string") : [];
+  const toggle = (id: string) => onChange({ ...trigger.config, mediaIds: selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id] });
+  return <div className="story-trigger-config media-trigger-config"><div className="story-trigger-heading"><div><strong>Post or Reel</strong><span>Pick one or more pieces of content, or listen to all.</span></div><button type="button" className="icon-button" onClick={reload} aria-label="Refresh Instagram content"><RefreshCw size={14} /></button></div>
+    {loading ? <InlineLoader /> : <div className="media-picker"><button type="button" className={!selected.length ? "selected" : ""} onClick={() => onChange({ ...trigger.config, mediaIds: [] })}><span className="media-all"><Camera size={18} /></span><strong>Any post or Reel</strong><small>New and existing content</small></button>{(data?.media ?? []).map((item) => { const preview = item.thumbnail_url ?? (item.media_type !== "VIDEO" ? item.media_url : undefined); return <button type="button" key={item.id} className={selected.includes(item.id) ? "selected" : ""} onClick={() => toggle(item.id)} title={item.caption ?? item.id}>{preview ? <img src={preview} alt="Instagram post or Reel" /> : <span className="media-all"><Camera size={18} /></span>}<span><strong>{item.caption?.trim().slice(0, 46) || humanize(item.media_type ?? "Instagram post")}</strong><small>{item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : item.id.slice(-8)}</small></span></button>; })}</div>}
+    {!loading && !(data?.media.length) && <p className="story-picker-note">No posts or Reels were returned. Reconnect Instagram if this account should have published media.</p>}
+    <small className="story-trigger-help">{selected.length ? `${selected.length} selected. Only comments on those items will qualify.` : "Comments on any post or Reel can qualify."}</small>
+  </div>;
+}
+
+function TextMatchFields({ config, noun, onChange }: { config: Record<string, unknown>; noun: string; onChange: ConfigChange }) {
+  const match = isObject(config.match) ? config.match : {};
+  const update = (values: Record<string, unknown>) => onChange({ ...config, match: { ...match, ...values } });
+  return <div className="guided-fields match-fields"><label>Which {noun}s qualify?<select value={stringValue(match.mode, "contains_any")} onChange={(event) => update({ mode: event.target.value })}><option value="contains_any">Contains any keyword</option><option value="contains_all">Contains all keywords</option><option value="exact">Exactly matches</option><option value="starts_with">Starts with</option><option value="contains">Contains phrase</option><option value="regex">Advanced pattern</option></select></label><label>Keywords or phrases<textarea value={listText(match.include)} onChange={(event) => update({ include: parseList(event.target.value) })} placeholder={"GUIDE\nTOOLKIT\nLINK"} /></label><small className="field-help">One per line. Leave empty to accept any {noun.toLowerCase()}.</small><label>Ignore when it contains<textarea className="short-textarea" value={listText(match.exclude)} onChange={(event) => update({ exclude: parseList(event.target.value) })} placeholder={"SCAM\nSPAM"} /></label><label className="checkbox-row"><input type="checkbox" checked={match.caseSensitive === true} onChange={(event) => update({ caseSensitive: event.target.checked })} /><span>Match capital letters exactly</span></label></div>;
+}
+
+function NodeConfigFields({ node, notify, onChange }: { node: AutomationNode; notify: Notify; onChange: ConfigChange }) {
+  const config = node.config;
+  switch (node.type) {
+    case "send_text": return <MessageField label="DM message" value={stringValue(config.text)} placeholder="Here’s the link you asked for…" onChange={(text) => onChange({ ...config, text })} />;
+    case "public_comment_reply": return <PublicReplyFields config={config} onChange={onChange} />;
+    case "send_buttons": return <ButtonMessageFields config={config} onChange={onChange} />;
+    case "send_resource": return <ResourceFields config={config} notify={notify} onChange={onChange} />;
+    case "ask_question": return <QuestionFields config={config} onChange={onChange} />;
+    case "send_email": return <EmailActionFields config={config} notify={notify} onChange={onChange} />;
+    case "send_image": return <div className="guided-fields"><label>Public image URL<input type="url" value={stringValue(config.url)} onChange={(event) => onChange({ ...config, url: event.target.value })} placeholder="https://…" /></label></div>;
+    case "delay": return <div className="guided-fields"><label>Wait (seconds)<input type="number" min="1" max={30 * 86400} value={numberValue(config.seconds, 60)} onChange={(event) => onChange({ ...config, seconds: Number(event.target.value) })} /></label><small className="field-help">Examples: 3600 = one hour, 86400 = one day.</small></div>;
+    case "condition": return <div className="guided-fields"><label>Saved answer name<input value={stringValue(config.field)} onChange={(event) => onChange({ ...config, field: event.target.value })} /></label><label>Comparison<select value={stringValue(config.operator, "equals")} onChange={(event) => onChange({ ...config, operator: event.target.value })}><option value="equals">Equals</option><option value="not_equals">Does not equal</option><option value="contains">Contains</option><option value="exists">Has any value</option><option value="greater_than">Is greater than</option><option value="less_than">Is less than</option></select></label>{config.operator !== "exists" && <label>Value<input value={stringValue(config.value)} onChange={(event) => onChange({ ...config, value: event.target.value })} /></label>}</div>;
+    case "wait_for_response": return <div className="guided-fields"><label>Save reply as<input value={stringValue(config.field, "answer")} onChange={(event) => onChange({ ...config, field: event.target.value })} /></label></div>;
+    case "notify_owner": return <MessageField label="Internal notification" value={stringValue(config.text)} placeholder="A new lead replied" onChange={(text) => onChange({ ...config, text })} />;
+    case "goal_reached": return <div className="guided-fields"><label>Goal name<input value={stringValue(config.goal, "converted")} onChange={(event) => onChange({ ...config, goal: event.target.value })} /></label></div>;
+    case "end": return <p className="config-note">This ends the journey. No message is sent.</p>;
+    case "ai_reply": return <p className="config-note">The configured AI Agent will draft a grounded reply when this step runs.</p>;
+    default: return <p className="config-note">This advanced action is available. Open Advanced JSON below to configure its provider-specific fields.</p>;
+  }
+}
+
+function MessageField({ label, value, placeholder, onChange }: { label: string; value: string; placeholder: string; onChange: (value: string) => void }) { return <div className="guided-fields"><label>{label}<textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label><small className="field-help">You can use variables such as {"{{email}}"} or {"{{incoming_text}}"}.</small></div>; }
+
+function PublicReplyFields({ config, onChange }: { config: Record<string, unknown>; onChange: ConfigChange }) {
+  const replies = Array.isArray(config.replies) ? config.replies : stringValue(config.text) ? [stringValue(config.text)] : [];
+  return <div className="guided-fields"><label>Public replies<textarea value={listText(replies)} onChange={(event) => { const values = parseList(event.target.value); onChange({ ...config, replies: values, text: values[0] ?? "" }); }} placeholder={"Got you — check your DMs\nJust sent it 👀\nIt should be in your inbox now"} /></label><small className="field-help">One reply per line. Inbox Orchard rotates them consistently to make replies feel less repetitive.</small></div>;
+}
+
+function ButtonMessageFields({ config, onChange }: { config: Record<string, unknown>; onChange: ConfigChange }) {
+  const buttons = Array.isArray(config.buttons) ? config.buttons.filter(isObject) : [];
+  const updateButton = (index: number, values: Record<string, unknown>) => onChange({ ...config, buttons: buttons.map((button, buttonIndex) => buttonIndex === index ? { ...button, ...values } : button) });
+  return <div className="guided-fields"><label>Opening DM<textarea value={stringValue(config.text)} onChange={(event) => onChange({ ...config, text: event.target.value })} placeholder="I got you — tap below and I’ll send it 👇" /></label><span className="mini-heading">Buttons (up to 3)</span>{buttons.map((button, index) => <div className="button-editor" key={index}><input value={stringValue(button.title)} onChange={(event) => updateButton(index, { title: event.target.value })} placeholder="Button label" /><input value={stringValue(button.url)} onChange={(event) => updateButton(index, { url: event.target.value, payload: event.target.value ? undefined : stringValue(button.payload) })} placeholder="Optional https:// link" /><button type="button" className="icon-button danger" onClick={() => onChange({ ...config, buttons: buttons.filter((_item, buttonIndex) => buttonIndex !== index) })} aria-label="Remove button"><Trash2 size={14} /></button></div>)}<button type="button" className="secondary full" disabled={buttons.length >= 3} onClick={() => onChange({ ...config, buttons: [...buttons, { title: "Send it", payload: `BUTTON_${buttons.length + 1}` }] })}><Plus size={14} /> Add button</button></div>;
+}
+
+function ResourceFields({ config, notify, onChange }: { config: Record<string, unknown>; notify: Notify; onChange: ConfigChange }) {
+  const { data, loading } = useRemote<{ resources: Array<{ id: string; name: string; type: string }> }>("/resources", notify);
+  return <div className="guided-fields"><label>Resource to send<select value={stringValue(config.resourceId)} onChange={(event) => onChange({ ...config, resourceId: event.target.value })} disabled={loading}><option value="">{loading ? "Loading resources…" : "Choose a saved resource"}</option>{data?.resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name} · {humanize(resource.type)}</option>)}</select></label>{!loading && !data?.resources.length && <p className="config-warning">Add a link or file in Resources before publishing this step.</p>}<small className="field-help">The recipient gets a tracked link so clicks can appear in Analytics.</small></div>;
+}
+
+function QuestionFields({ config, onChange }: { config: Record<string, unknown>; onChange: ConfigChange }) {
+  const field = stringValue(config.field, "answer");
+  return <div className="guided-fields"><label>Question sent in DM<textarea value={stringValue(config.text)} onChange={(event) => onChange({ ...config, text: event.target.value })} placeholder="What email should I send it to?" /></label><label>Save their answer as<select value={field === "email" ? "email" : "custom"} onChange={(event) => onChange({ ...config, field: event.target.value === "email" ? "email" : "answer" })}><option value="email">Email address</option><option value="custom">Another answer</option></select></label>{field !== "email" && <label>Answer name<input value={field} onChange={(event) => onChange({ ...config, field: event.target.value })} placeholder="company_size" /></label>}<small className="field-help">Email answers are validated and saved directly to the contact before the next step runs.</small></div>;
+}
+
+function EmailActionFields({ config, notify, onChange }: { config: Record<string, unknown>; notify: Notify; onChange: ConfigChange }) {
+  const { data, loading } = useRemote<EmailOverview>("/email", notify);
+  return <div className="guided-fields"><label>Email template<select value={stringValue(config.templateId)} onChange={(event) => onChange({ ...config, templateId: event.target.value })} disabled={loading}><option value="">{loading ? "Loading templates…" : "Choose a template"}</option>{data?.templates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.subject}</option>)}</select></label><label>Sender<select value={stringValue(config.senderId)} onChange={(event) => onChange({ ...config, senderId: event.target.value || undefined })} disabled={loading}><option value="">Use default connected sender</option>{data?.senders.filter((sender) => sender.status === "connected").map((sender) => <option key={sender.id} value={sender.id}>{sender.display_name || sender.email} · {sender.provider}</option>)}</select></label><label>Recipient<input value={stringValue(config.recipient)} onChange={(event) => onChange({ ...config, recipient: event.target.value })} placeholder="Uses captured contact email" /></label><small className="field-help">Leave recipient empty after an email-capture question; the saved contact email is used automatically.</small>{!loading && !data?.templates.length && <p className="config-warning">Create an Email template before publishing this step.</p>}</div>;
+}
+
+function defaultTriggerConfig(type: TriggerType): Record<string, unknown> {
+  if (["instagram_comment", "instagram_dm", "keyword"].includes(type)) return { match: { mode: "contains_any", include: [], exclude: [], caseSensitive: false }, ...(type === "instagram_comment" ? { mediaIds: [] } : {}) };
+  if (type === "story_reply" || type === "story_mention") return { mediaIds: [] };
+  if (type === "ai_intent") return { intent: "", examples: [], confidence: .75 };
+  if (type === "scheduled") return { intervalMinutes: 60 };
+  return {};
+}
+
+function isObject(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
+function stringValue(value: unknown, fallback = ""): string { return typeof value === "string" ? value : fallback; }
+function numberValue(value: unknown, fallback: number): number { return typeof value === "number" && Number.isFinite(value) ? value : fallback; }
+function listText(value: unknown): string { return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").join("\n") : ""; }
+function parseList(value: string): string[] { return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean); }
 
 interface TemplateItem { id: string; category: string; definition: AutomationDefinition }
 function TemplatesPage({ notify, applyTemplate }: { notify: Notify; applyTemplate: (definition: AutomationDefinition) => void }) {
@@ -488,7 +603,21 @@ function NodeIcon({ type }: { type: AutomationNodeType }) { if (type.startsWith(
 
 function flowNode(node: AutomationNode): FlowNode { return { id: node.id, position: node.position, data: { automation: node }, type: "default", style: { border: "1px solid #d9dfe9", borderRadius: 14, padding: 12, color: "#14213d", fontWeight: 700, boxShadow: "0 8px 24px rgba(24,32,55,.08)", minWidth: 160 } }; }
 function flowEdge(edge: AutomationDefinition["edges"][number]): Edge { return { ...edge, markerEnd: { type: MarkerType.ArrowClosed }, style: { stroke: "#6d5dfc", strokeWidth: 2 }, labelStyle: { fill: "#4b5568", fontWeight: 700 } }; }
-function defaultNodeConfig(type: AutomationNodeType): Record<string, unknown> { if (type === "send_text") return { text: "Write your message…" }; if (type === "ask_question") return { text: "What would you like to ask?", field: "answer" }; if (type === "delay") return { seconds: 60 }; if (type === "condition") return { field: "answer", operator: "equals", value: "yes" }; if (type === "public_comment_reply") return { text: "sent 🤝" }; return {}; }
+function defaultNodeConfig(type: AutomationNodeType): Record<string, unknown> {
+  if (type === "send_text") return { text: "Write your message…" };
+  if (type === "send_buttons") return { text: "I got you — tap below 👇", buttons: [{ title: "Send it", payload: "SEND_IT" }] };
+  if (type === "send_image") return { url: "" };
+  if (type === "send_resource") return { resourceId: "" };
+  if (type === "ask_question") return { text: "What would you like to ask?", field: "answer" };
+  if (type === "wait_for_response") return { field: "answer" };
+  if (type === "delay") return { seconds: 60 };
+  if (type === "condition") return { field: "answer", operator: "equals", value: "yes" };
+  if (type === "public_comment_reply") return { text: "Sent 🤝", replies: ["Sent 🤝"] };
+  if (type === "send_email") return { templateId: "" };
+  if (type === "notify_owner") return { text: "A contact reached this step." };
+  if (type === "goal_reached") return { goal: "converted" };
+  return {};
+}
 
 function useRemote<T>(path: string, notify: Notify) {
   const [data, setData] = useState<T | null>(null); const [loading, setLoading] = useState(true);

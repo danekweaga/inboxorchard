@@ -104,9 +104,17 @@ function validateNodeConfig(node: AutomationNode, issues: ValidationIssue[]): vo
     case "send_text":
     case "ask_question":
     case "notify_owner":
-    case "public_comment_reply":
       requireString("text", "message text");
       break;
+    case "public_comment_reply": {
+      const replies = Array.isArray(node.config.replies)
+        ? node.config.replies.filter((reply) => typeof reply === "string" && reply.trim().length > 0)
+        : [];
+      if (!stringConfig(node, "text") && replies.length === 0) {
+        issues.push({ level: "error", code: "missing_text", message: `${node.label}: add at least one public reply.`, nodeId: node.id });
+      }
+      break;
+    }
     case "send_buttons":
       requireString("text", "message text");
       if (!Array.isArray(node.config.buttons) || node.config.buttons.length < 1 || node.config.buttons.length > 3) {

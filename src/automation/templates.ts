@@ -32,8 +32,8 @@ export const AUTOMATION_TEMPLATES: Array<{ id: string; category: string; definit
     id: "comment-to-dm",
     category: "Instagram",
     definition: linearTemplate("Comment → DM", "Reply publicly, then open a private conversation.", "instagram_comment", [
-      { id: "public", type: "public_comment_reply", label: "Reply publicly", position: { x: 60, y: 120 }, config: { text: "sent 🤝" } },
-      { id: "dm", type: "send_text", label: "Send private reply", position: { x: 340, y: 120 }, config: { text: "gotchu — check this out" } },
+      { id: "public", type: "public_comment_reply", label: "Reply publicly", position: { x: 60, y: 120 }, config: { text: "Sent 🤝", replies: ["Sent 🤝", "Just sent it 👀", "Check your DMs"] } },
+      { id: "dm", type: "send_text", label: "Send opening DM", position: { x: 340, y: 120 }, config: { text: "I got you — here’s what you asked for 👇" } },
       end(620),
     ]),
   },
@@ -41,7 +41,7 @@ export const AUTOMATION_TEMPLATES: Array<{ id: string; category: string; definit
     id: "comment-resource",
     category: "Resources",
     definition: linearTemplate("Comment → Resource", "Turn a keyword comment into a tracked resource delivery.", "instagram_comment", [
-      { id: "public", type: "public_comment_reply", label: "Reply publicly", position: { x: 60, y: 120 }, config: { text: "just sent it 👀" } },
+      { id: "public", type: "public_comment_reply", label: "Reply publicly", position: { x: 60, y: 120 }, config: { text: "Just sent it 👀", replies: ["Just sent it 👀", "Got you — check your DMs", "It should be in your inbox now"] } },
       { id: "resource", type: "send_resource", label: "Send resource", position: { x: 340, y: 120 }, config: { resourceId: "SELECT_RESOURCE" } },
       end(620),
     ]),
@@ -57,11 +57,10 @@ export const AUTOMATION_TEMPLATES: Array<{ id: string; category: string; definit
   {
     id: "capture-email",
     category: "Lead capture",
-    definition: linearTemplate("Capture Email", "Ask for an email, persist the response, and add a subscriber tag.", "instagram_dm", [
+    definition: linearTemplate("Capture Email", "Ask for an email, validate it, and save it to the Instagram contact.", "instagram_dm", [
       { id: "ask", type: "ask_question", label: "Ask for email", position: { x: 60, y: 120 }, config: { text: "Where should I email the full kit?", field: "email" } },
-      { id: "field", type: "update_field", label: "Save email field", position: { x: 340, y: 120 }, config: { fieldId: "SELECT_EMAIL_FIELD", valueFrom: "email" } },
-      { id: "tag", type: "add_tag", label: "Tag subscriber", position: { x: 620, y: 120 }, config: { tagId: "SELECT_TAG" } },
-      end(900),
+      { id: "confirm", type: "send_text", label: "Confirm email capture", position: { x: 340, y: 120 }, config: { text: "Perfect — I saved {{email}} and will send it there." } },
+      end(620),
     ]),
   },
   {
@@ -87,10 +86,10 @@ export const AUTOMATION_TEMPLATES: Array<{ id: string; category: string; definit
   {
     id: "story-reply",
     category: "Instagram",
-    definition: linearTemplate("Story Reply", "Respond to an eligible Story reply event.", "story_reply", [
+    definition: { ...linearTemplate("Story Reply", "Respond to a reply on any active Story or one Story you select.", "story_reply", [
       { id: "thanks", type: "send_text", label: "Send thanks", position: { x: 80, y: 120 }, config: { text: "appreciate you replying 🫡" } },
       end(380),
-    ]),
+    ]), trigger: { type: "story_reply", config: { mediaIds: [] } } },
   },
   {
     id: "faq-bot",

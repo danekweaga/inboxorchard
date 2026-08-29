@@ -51,13 +51,15 @@ export class AutomationExecutor {
   constructor(private readonly env: Env) {}
 
   async handleTrigger(trigger: AutomationTriggerContext): Promise<string[]> {
-    if (trigger.type === "instagram_dm" && trigger.conversationId) {
+    if (["instagram_dm", "story_reply", "story_mention"].includes(trigger.type) && trigger.conversationId) {
       const resumed = await this.resumeFromInbound(trigger);
       if (resumed) return [resumed];
     }
     const candidateTypes: TriggerType[] = trigger.type === "instagram_dm"
       ? ["instagram_dm", "keyword", "ai_intent"]
-      : [trigger.type];
+      : trigger.type === "story_reply" || trigger.type === "story_mention"
+        ? [trigger.type, "instagram_dm", "keyword", "ai_intent"]
+        : [trigger.type];
     const candidates = (await Promise.all(candidateTypes.map((type) => publishedDefinitions(this.env.DB, type))))
       .flat()
       .sort((left, right) => left.automation.priority - right.automation.priority || left.automation.created_at - right.automation.created_at);
@@ -205,7 +207,11 @@ export class AutomationExecutor {
         const mock = this.env.MOCK_MODE === "true";
         const runtime = mock ? null : await buildRuntime(this.env);
         if (!runtime && !mock) throw new Error("Instagram is not connected");
-        const text = render(String(node.config.text ?? ""), context);
+        const replies = Array.isArray(node.config.replies)
+          ? node.config.replies.filter((reply): reply is string => typeof reply === "string" && reply.trim().length > 0)
+          : [];
+        const replyTemplate = replies.length ? replies[stableVariantIndex(context.eventId, replies.length)]! : String(node.config.text ?? "");
+        const text = render(replyTemplate, context);
         if (runtime) {
           const channel = new InstagramChannel(this.env.DB, runtime.client);
           await channel.replyToComment(context.commentId, text, { idempotencyKey: `run:${run.id}:node:${node.id}` });
@@ -566,7 +572,13 @@ export class AutomationExecutor {
   }
 }
 
-function triggerMatches(definition: AutomationDefinition, trigger: AutomationTriggerContext): boolean {
+function stableVariantIndex(seed: string, length: number): number {
+  let hash = 0;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % length;
+}
+
+export function triggerMatches(definition: AutomationDefinition, trigger: AutomationTriggerContext): boolean {
   const config = definition.trigger.config;
   if (trigger.type === "manual") return true;
   if (definition.trigger.type === "scheduled") {
@@ -574,8 +586,9 @@ function triggerMatches(definition: AutomationDefinition, trigger: AutomationTri
     const minute = Math.floor((trigger.timestamp ?? unixNow()) / 60);
     return minute % interval === 0;
   }
-  if (definition.trigger.type === "instagram_dm" || definition.trigger.type === "keyword" || definition.trigger.type === "instagram_comment") {
+  if (definition.trigger.type === "instagram_dm" || definition.trigger.type === "keyword" || definition.trigger.type === "instagram_comment" || definition.trigger.type === "story_reply" || definition.trigger.type === "story_mention") {
     if (definition.trigger.type === "instagram_comment" && Array.isArray(config.mediaIds) && config.mediaIds.length > 0 && !config.mediaIds.includes(trigger.mediaId)) return false;
+    if ((definition.trigger.type === "story_reply" || definition.trigger.type === "story_mention") && Array.isArray(config.mediaIds) && config.mediaIds.length > 0 && !config.mediaIds.includes(trigger.mediaId)) return false;
     const match = config.match;
     if (!match || typeof match !== "object") return true;
     const record = match as Record<string, unknown>;

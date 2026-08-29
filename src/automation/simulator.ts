@@ -63,7 +63,10 @@ function simulateNodeSummary(node: AutomationNode): string {
     case "send_text": return `Would send DM: ${String(node.config.text ?? "")}`;
     case "send_resource": return `Would deliver resource ${String(node.config.resourceId ?? "")}.`;
     case "send_email": return `Would queue email template ${String(node.config.templateId ?? "")}.`;
-    case "public_comment_reply": return `Would reply publicly: ${String(node.config.text ?? "")}`;
+    case "public_comment_reply": {
+      const replies = Array.isArray(node.config.replies) ? node.config.replies.filter((reply) => typeof reply === "string") : [];
+      return `Would reply publicly: ${String(replies[0] ?? node.config.text ?? "")}`;
+    }
     case "delay": return `Would wait ${String(node.config.seconds ?? "?")} seconds.`;
     default: return `${node.label} (${node.type})`;
   }

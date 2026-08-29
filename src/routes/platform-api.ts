@@ -21,6 +21,7 @@ import { sealSecret, timingSafeEqual } from "../security/crypto";
 import { createSession, requestOriginAllowed, SESSION_COOKIE, verifySession } from "../security/session";
 import { sendManualReply, suggestReply } from "../services/messaging";
 import { createSequence } from "../services/sequences";
+import { buildRuntime } from "../runtime";
 import type { Env } from "../types";
 import { isFreeMode, isMockMode, metaAppId, metaAppSecret, metaVerifyToken } from "../types";
 
@@ -96,6 +97,28 @@ platformApi.get("/bootstrap", async (context) => {
     } : { connected: false, error: authError },
     capabilities: INSTAGRAM_CAPABILITIES,
   });
+});
+
+platformApi.get("/instagram/stories", async (context) => {
+  const runtime = await buildRuntime(context.env);
+  if (!runtime) return jsonError("Instagram is not connected or its access token has expired", 400);
+  try {
+    return context.json({ stories: await runtime.client.getStories(30) });
+  } catch (error) {
+    console.error("[inbox-orchard] failed to load Instagram Stories", error);
+    return jsonError(error instanceof Error ? error.message : "Could not load Instagram Stories", 502);
+  }
+});
+
+platformApi.get("/instagram/media", async (context) => {
+  const runtime = await buildRuntime(context.env);
+  if (!runtime) return jsonError("Instagram is not connected or its access token has expired", 400);
+  try {
+    return context.json({ media: await runtime.client.getMedia(30) });
+  } catch (error) {
+    console.error("[inbox-orchard] failed to load Instagram media", error);
+    return jsonError(error instanceof Error ? error.message : "Could not load Instagram posts and Reels", 502);
+  }
 });
 
 platformApi.get("/dashboard", async (context) => {

@@ -56,6 +56,7 @@ export interface IgMedia {
   media_url?: string;
   thumbnail_url?: string;
   permalink?: string;
+  timestamp?: string;
   like_count?: number;
   comments_count?: number;
 }
@@ -258,6 +259,15 @@ export class InstagramClient {
   async getMedia(limit = 25): Promise<IgMedia[]> {
     const res = await this.get<{ data?: IgMedia[] }>(`/me/media`, {
       fields: "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count",
+      limit: String(limit),
+    });
+    return res.data ?? [];
+  }
+
+  /** Active Stories owned by the connected account, used by Story trigger pickers. */
+  async getStories(limit = 25): Promise<IgMedia[]> {
+    const res = await this.get<{ data?: IgMedia[] }>(`/me/stories`, {
+      fields: "id,media_type,media_url,thumbnail_url,permalink,timestamp",
       limit: String(limit),
     });
     return res.data ?? [];

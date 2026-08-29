@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { triggerMatches } from "../src/automation/executor";
 import { starterDefinition } from "../src/automation/schema";
 import { simulateWorkflow } from "../src/automation/simulator";
 import { validateWorkflow } from "../src/automation/validator";
@@ -52,5 +53,28 @@ describe("workflow simulator", () => {
     const result = simulateWorkflow(definition);
     expect(result.status).toBe("completed");
     expect(result.events.some((event) => event.summary.startsWith("Would send DM"))).toBe(true);
+  });
+});
+
+describe("Instagram content selection", () => {
+  it("runs a comment automation only for a selected post or Reel", () => {
+    const definition = starterDefinition("Selected post");
+    definition.trigger = { type: "instagram_comment", config: { mediaIds: ["post_123"], match: { mode: "contains_any", include: ["guide"], exclude: [], caseSensitive: false } } };
+    expect(triggerMatches(definition, { type: "instagram_comment", eventId: "one", mediaId: "post_123", text: "GUIDE please" })).toBe(true);
+    expect(triggerMatches(definition, { type: "instagram_comment", eventId: "two", mediaId: "post_999", text: "GUIDE please" })).toBe(false);
+  });
+
+  it("runs a Story automation only for the selected Story", () => {
+    const definition = starterDefinition("Selected Story");
+    definition.trigger = { type: "story_reply", config: { mediaIds: ["story_123"] } };
+    expect(triggerMatches(definition, { type: "story_reply", eventId: "one", mediaId: "story_123", text: "Love this" })).toBe(true);
+    expect(triggerMatches(definition, { type: "story_reply", eventId: "two", mediaId: "story_999", text: "Love this" })).toBe(false);
+  });
+
+  it("accepts public reply variations without a duplicate text field", () => {
+    const definition = starterDefinition("Reply variations");
+    definition.trigger = { type: "instagram_comment", config: {} };
+    definition.nodes[0] = { ...definition.nodes[0]!, type: "public_comment_reply", config: { replies: ["Sent it", "Check your DMs"] } };
+    expect(validateWorkflow(definition).valid).toBe(true);
   });
 });
