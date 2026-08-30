@@ -82,6 +82,8 @@ export interface IgConversation {
   messages?: { data?: IgMessage[] };
 }
 
+export const REQUIRED_WEBHOOK_FIELDS = ["comments", "messages", "messaging_postbacks", "mentions"] as const;
+
 export class InstagramClient {
   constructor(
     private readonly accessToken: string,
@@ -207,6 +209,11 @@ export class InstagramClient {
       recipient: { comment_id: commentId },
       message: { text },
     });
+  }
+
+  /** Subscribe this app to real-time events for the connected Professional account. */
+  subscribeWebhooks(fields: readonly string[] = REQUIRED_WEBHOOK_FIELDS): Promise<{ success: boolean }> {
+    return this.post(`/${this.igUserId}/subscribed_apps`, { subscribed_fields: fields });
   }
 
   // ---- public comment actions ----

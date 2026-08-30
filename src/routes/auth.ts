@@ -2,7 +2,7 @@
 // code exchange → long-lived token stored in auth. Plus connection status + disconnect.
 
 import { buildAuthorizeUrl, exchangeCodeForShortLivedToken, exchangeForLongLivedToken } from "../auth/oauth";
-import { InstagramClient } from "../api/client";
+import { InstagramClient, REQUIRED_WEBHOOK_FIELDS } from "../api/client";
 import { sha256, unixNow } from "../core/id";
 import { clearAuth, getAuth, kvGet, kvSet, now, saveAuth } from "../db";
 import type { Env } from "../types";
@@ -70,10 +70,14 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
       );
     }
 
+    const igUserId = me.user_id ?? short.userId;
+    const subscription = await new InstagramClient(long.accessToken, env.GRAPH_VERSION, igUserId).subscribeWebhooks();
+    if (!subscription.success) throw new Error("Meta did not accept the Instagram webhook subscription");
+
     await saveAuth(env.DB, {
       access_token: long.accessToken,
       expires_at: now() + long.expiresIn,
-      ig_user_id: me.user_id ?? short.userId,
+      ig_user_id: igUserId,
       username: me.username ?? null,
       account_type: me.account_type ?? null,
       profile_picture_url: me.profile_picture_url ?? null,
@@ -82,6 +86,7 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
     return html(
       `<h1>Connected ✅</h1>
        <p>@${escapeHtml(me.username ?? "your account")} is now connected to Inbox Orchard.</p>
+       <p>Subscribed to ${escapeHtml(REQUIRED_WEBHOOK_FIELDS.join(", "))} events.</p>
        <p>Token valid ~60 days; it auto-refreshes. You can close this tab.</p>`,
     );
   } catch (e) {
