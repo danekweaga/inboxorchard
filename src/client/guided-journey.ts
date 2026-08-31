@@ -1,4 +1,5 @@
 import type { AutomationEdge, AutomationNode, TriggerType } from "../automation/schema";
+import { arrangeAutomationNodes } from "./flow-layout";
 
 export const JOURNEY_IDS = {
   publicReply: "journey_public_reply",
@@ -95,7 +96,7 @@ export function composeGuidedJourney(
   );
   ordered.push(required(JOURNEY_IDS.end, "end", "End", {}));
 
-  const positioned = ordered.map((item, index) => ({ ...item, position: { x: 70 + index * 235, y: 150 } }));
+  const positioned = arrangeAutomationNodes(ordered);
   const edges = positioned.slice(0, -1).map((item, index) => ({
     id: `journey_edge_${item.id}_${positioned[index + 1]!.id}`,
     source: item.id,
