@@ -80,6 +80,10 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
       for (const messageEvent of entry.messaging ?? []) {
         const instagramUserId = messageEvent.sender?.id;
         if (!instagramUserId || instagramUserId === runtime?.igUserId) continue;
+        // Delivery/read/seen receipts share the messaging envelope but are not user input. Letting
+        // them reach the automation engine would incorrectly resume a wait step just because the
+        // recipient opened the DM, causing follow prompts and delivery messages to fire early.
+        if (!messageEvent.message && !messageEvent.postback) continue;
         const timestamp = messageEvent.timestamp
           ? Math.floor(messageEvent.timestamp / 1000)
           : unixNow();
