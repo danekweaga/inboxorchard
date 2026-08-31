@@ -14,6 +14,7 @@ import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
 import { buildRuntime } from "./runtime";
 import { processDurableJob } from "./services/jobs";
 import { processDueSequences } from "./services/sequences";
+import { ensureInstagramWebhookSubscription } from "./services/webhook-subscription";
 import type { Env } from "./types";
 
 type AppEnv = { Bindings: Env };
@@ -48,7 +49,7 @@ const handler = {
     }
     if (event.cron !== "* * * * *") return;
 
-    const work: Promise<unknown>[] = [processDueWork(env), processDueSequences(env)];
+    const work: Promise<unknown>[] = [processDueWork(env), processDueSequences(env), ensureInstagramWebhookSubscription(env)];
     if (env.MODE === "polling" && env.MOCK_MODE !== "true") work.push(runPoll(env));
     context.waitUntil(Promise.all(work));
   },
