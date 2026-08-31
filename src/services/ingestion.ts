@@ -10,6 +10,10 @@ interface StoredWebhookEvent {
   status: string;
 }
 
+export function shouldRunLegacyCommentFallback(mode: string, structuredRunsStarted: number): boolean {
+  return mode !== "webhook" && structuredRunsStarted === 0;
+}
+
 export async function processWebhookEvent(env: Env, eventId: string): Promise<void> {
   const stored = await env.DB.prepare("SELECT id, payload_json, status FROM webhook_events WHERE id = ?")
     .bind(eventId).first<StoredWebhookEvent>();
@@ -73,8 +77,9 @@ export async function processWebhookEvent(env: Env, eventId: string): Promise<vo
           mediaId,
           timestamp,
         });
-        // Structured automations have deterministic priority over legacy campaigns.
-        if (started.length === 0 && runtime) await runtime.engine.handleComment(event);
+        // Webhook mode is structured-only. Falling back after re-entry protection intentionally
+        // blocks a run would let the legacy engine send the same person another opening DM.
+        if (runtime && shouldRunLegacyCommentFallback(env.MODE, started.length)) await runtime.engine.handleComment(event);
       }
 
       for (const messageEvent of entry.messaging ?? []) {

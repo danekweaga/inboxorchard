@@ -3,6 +3,7 @@ import { shouldAllowReentry, triggerMatches } from "../src/automation/executor";
 import { starterDefinition } from "../src/automation/schema";
 import { simulateWorkflow } from "../src/automation/simulator";
 import { validateWorkflow } from "../src/automation/validator";
+import { shouldRunLegacyCommentFallback } from "../src/services/ingestion";
 
 describe("structured workflow validation", () => {
   it("accepts the starter workflow", () => {
@@ -52,6 +53,18 @@ describe("automation re-entry protection", () => {
     expect(shouldAllowReentry("after_24h", { status: "completed", started_at: now - 86_399, updated_at: now - 80_000 }, now)).toBe(false);
     expect(shouldAllowReentry("after_24h", { status: "completed", started_at: now - 86_400, updated_at: now - 80_000 }, now)).toBe(true);
     expect(shouldAllowReentry("once", { status: "failed", started_at: now - 1_000, updated_at: now - 301 }, now)).toBe(true);
+  });
+});
+
+describe("legacy comment fallback", () => {
+  it("never invokes the old campaign engine in webhook mode", () => {
+    expect(shouldRunLegacyCommentFallback("webhook", 0)).toBe(false);
+    expect(shouldRunLegacyCommentFallback("webhook", 1)).toBe(false);
+  });
+
+  it("keeps polling-mode compatibility when no structured run starts", () => {
+    expect(shouldRunLegacyCommentFallback("polling", 0)).toBe(true);
+    expect(shouldRunLegacyCommentFallback("polling", 1)).toBe(false);
   });
 });
 
