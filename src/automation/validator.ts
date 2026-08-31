@@ -44,6 +44,19 @@ export function validateWorkflow(input: unknown): WorkflowValidation {
   for (const edge of definition.edges) {
     if (!ids.has(edge.source)) issues.push({ level: "error", code: "missing_edge_source", message: `Edge ${edge.id} has a missing source.` });
     if (!ids.has(edge.target)) issues.push({ level: "error", code: "missing_edge_target", message: `Edge ${edge.id} has a missing target.` });
+    const source = definition.nodes.find((node) => node.id === edge.source);
+    const target = definition.nodes.find((node) => node.id === edge.target);
+    if (source?.type === "send_buttons" && target?.type === "wait_for_response") {
+      const hasPostback = Array.isArray(source.config.buttons) && source.config.buttons.some((button) =>
+        button && typeof button === "object" && typeof (button as Record<string, unknown>).payload === "string",
+      );
+      if (!hasPostback) issues.push({
+        level: "error",
+        code: "wait_button_requires_postback",
+        message: `${source.label}: add a reply button so the journey can continue after it is tapped.`,
+        nodeId: source.id,
+      });
+    }
   }
 
   const reachable = new Set<string>();

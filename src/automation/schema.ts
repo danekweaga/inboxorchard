@@ -85,7 +85,8 @@ export const automationDefinitionSchema = z.object({
   settings: z.object({
     stopOtherAutomations: z.boolean().default(true),
     priority: z.number().int().min(0).max(1000).default(100),
-  }).default({ stopOtherAutomations: true, priority: 100 }),
+    reentry: z.enum(["once", "after_24h", "every_time"]).default("once"),
+  }).default({ stopOtherAutomations: true, priority: 100, reentry: "once" }),
 });
 
 export type AutomationDefinition = z.infer<typeof automationDefinitionSchema>;
@@ -104,6 +105,6 @@ export function starterDefinition(name = "Untitled automation"): AutomationDefin
       { id: "end", type: "end", label: "End", position: { x: 380, y: 120 }, config: {} },
     ],
     edges: [{ id: "edge_welcome_end", source: "send_welcome", target: "end" }],
-    settings: { stopOtherAutomations: true, priority: 100 },
+    settings: { stopOtherAutomations: true, priority: 100, reentry: "once" },
   };
 }

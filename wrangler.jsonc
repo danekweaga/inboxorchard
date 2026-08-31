@@ -46,7 +46,7 @@
   },
   "vars": {
     "GRAPH_VERSION": "v26.0",
-    "MODE": "polling",
+    "MODE": "webhook",
     "POLL_INTERVAL_SECONDS": "90",
     "REDIRECT_URI": "https://chatmany.danekweaga.workers.dev/auth/callback",
     "FREE_MODE": "true",

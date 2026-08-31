@@ -41,6 +41,25 @@ interface RunRow {
   retry_count: number;
 }
 
+interface PreviousRunRow {
+  status: string;
+  started_at: number;
+  updated_at: number;
+}
+
+export function shouldAllowReentry(
+  policy: "once" | "after_24h" | "every_time",
+  previous: PreviousRunRow | null,
+  now: number,
+): boolean {
+  if (!previous) return true;
+  if (previous.status === "running" || previous.status === "waiting") return false;
+  if (previous.status === "failed") return now - previous.updated_at >= 300;
+  if (policy === "every_time") return true;
+  if (policy === "after_24h") return now - previous.started_at >= 86400;
+  return false;
+}
+
 interface ExecutionContext extends AutomationTriggerContext {
   variables: Record<string, unknown>;
   privateReplyUsed?: boolean;
@@ -106,6 +125,14 @@ export class AutomationExecutor {
   ): Promise<string | null> {
     const runId = id("run");
     const timestamp = unixNow();
+    if (trigger.contactId && trigger.type !== "manual") {
+      const previous = await this.env.DB.prepare(
+        `SELECT status, started_at, updated_at FROM automation_runs
+         WHERE automation_id = ? AND contact_id = ?
+         ORDER BY started_at DESC LIMIT 1`,
+      ).bind(automationId, trigger.contactId).first<PreviousRunRow>();
+      if (!shouldAllowReentry(definition.settings.reentry ?? "once", previous ?? null, timestamp)) return null;
+    }
     if (trigger.conversationId && definition.settings.stopOtherAutomations) {
       const lock = await this.env.DB.prepare(
         `UPDATE conversations_v2 SET automation_lock_run_id = ?
@@ -192,8 +219,9 @@ export class AutomationExecutor {
             if (!item || typeof item !== "object") continue;
             const button = item as Record<string, unknown>;
             const title = typeof button.title === "string" ? button.title : "Continue";
-            if (typeof button.url === "string") buttons.push({ type: "web_url", title, url: button.url });
-            else buttons.push({ type: "postback", title, payload: typeof button.payload === "string" ? button.payload : `NODE_${node.id}` });
+            if (typeof button.payload === "string") buttons.push({ type: "postback", title, payload: button.payload });
+            else if (typeof button.url === "string") buttons.push({ type: "web_url", title, url: button.url });
+            else buttons.push({ type: "postback", title, payload: `NODE_${node.id}` });
           }
         }
         const followWaitId = chooseNext(definition, node, context);

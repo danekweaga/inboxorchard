@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { triggerMatches } from "../src/automation/executor";
+import { shouldAllowReentry, triggerMatches } from "../src/automation/executor";
 import { starterDefinition } from "../src/automation/schema";
 import { simulateWorkflow } from "../src/automation/simulator";
 import { validateWorkflow } from "../src/automation/validator";
@@ -27,6 +27,31 @@ describe("structured workflow validation", () => {
     definition.nodes[0] = { ...definition.nodes[0]!, type: "call_webhook", config: { url: "https://127.0.0.1/admin" } };
     const result = validateWorkflow(definition);
     expect(result.issues.some((issue) => issue.code === "unsafe_url")).toBe(true);
+  });
+
+  it("rejects link-only buttons before a wait step", () => {
+    const definition = starterDefinition();
+    definition.nodes = [
+      { id: "opening", type: "send_buttons", label: "Opening", position: { x: 0, y: 0 }, config: { text: "Tap", buttons: [{ title: "Open", url: "https://example.com" }] } },
+      { id: "wait", type: "wait_for_response", label: "Wait", position: { x: 200, y: 0 }, config: { field: "confirmed" } },
+    ];
+    definition.startNodeId = "opening";
+    definition.edges = [{ id: "opening-wait", source: "opening", target: "wait" }];
+    expect(validateWorkflow(definition).issues.some((issue) => issue.code === "wait_button_requires_postback")).toBe(true);
+  });
+});
+
+describe("automation re-entry protection", () => {
+  const now = 2_000_000;
+  it("blocks running and completed one-time runs", () => {
+    expect(shouldAllowReentry("once", { status: "running", started_at: now - 10, updated_at: now - 10 }, now)).toBe(false);
+    expect(shouldAllowReentry("once", { status: "completed", started_at: now - 90_000, updated_at: now - 89_000 }, now)).toBe(false);
+  });
+
+  it("supports a 24-hour window and delayed retry after failure", () => {
+    expect(shouldAllowReentry("after_24h", { status: "completed", started_at: now - 86_399, updated_at: now - 80_000 }, now)).toBe(false);
+    expect(shouldAllowReentry("after_24h", { status: "completed", started_at: now - 86_400, updated_at: now - 80_000 }, now)).toBe(true);
+    expect(shouldAllowReentry("once", { status: "failed", started_at: now - 1_000, updated_at: now - 301 }, now)).toBe(true);
   });
 });
 

@@ -25,7 +25,7 @@ describe("guided DM journey", () => {
       startNodeId: journey.startNodeId,
       nodes: journey.nodes,
       edges: journey.edges,
-      settings: { stopOtherAutomations: true, priority: 100 },
+      settings: { stopOtherAutomations: true, priority: 100, reentry: "once" },
     });
     expect(result.valid).toBe(true);
   });
@@ -50,6 +50,16 @@ describe("guided DM journey", () => {
       type: "send_resource",
       config: { resourceId: "resource_123" },
     });
+  });
+
+  it("repairs an opening link button into a reply button that can resume the journey", () => {
+    const initial = createGuidedJourney("instagram_comment");
+    const opening = initial.nodes.find((node) => node.id === JOURNEY_IDS.opening)!;
+    opening.config.buttons = [{ title: "Send it", url: "https://example.com/download" }];
+    const journey = composeGuidedJourney("instagram_comment", initial.nodes, { follow: true, email: false, thanks: true });
+    expect(journey.nodes.find((node) => node.id === JOURNEY_IDS.opening)?.config.buttons).toEqual([
+      { title: "Send it", payload: "OPENING_CONFIRMED" },
+    ]);
   });
 });
 

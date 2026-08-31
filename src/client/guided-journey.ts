@@ -75,8 +75,12 @@ export function composeGuidedJourney(
     byId.get(id) ?? node(id, type, label, config);
   const ordered: AutomationNode[] = [];
   if (triggerType === "instagram_comment") ordered.push(required(JOURNEY_IDS.publicReply, "public_comment_reply", "Public comment reply", { text: "Sent 🤝", replies: ["Sent 🤝"] }));
+  const opening = required(JOURNEY_IDS.opening, "send_buttons", "Opening DM", { text: "Tap below to continue 👇", buttons: [{ title: "Send it", payload: "OPENING_CONFIRMED" }] });
+  const currentOpeningButton = Array.isArray(opening.config.buttons) && opening.config.buttons[0] && typeof opening.config.buttons[0] === "object"
+    ? opening.config.buttons[0] as Record<string, unknown>
+    : {};
   ordered.push(
-    required(JOURNEY_IDS.opening, "send_buttons", "Opening DM", { text: "Tap below to continue 👇", buttons: [{ title: "Send it", payload: "OPENING_CONFIRMED" }] }),
+    { ...opening, config: { ...opening.config, buttons: [{ title: String(currentOpeningButton.title ?? "Send it"), payload: "OPENING_CONFIRMED" }] } },
     required(JOURNEY_IDS.openingWait, "wait_for_response", "Wait for opening tap", { field: "opening_confirmed" }),
   );
   if (toggles.follow) ordered.push(

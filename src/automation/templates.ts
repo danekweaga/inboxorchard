@@ -21,7 +21,7 @@ function linearTemplate(
     startNodeId: nodes[0]?.id ?? "end",
     nodes,
     edges: nodes.slice(0, -1).map((node, index) => ({ id: `e_${node.id}_${nodes[index + 1]!.id}`, source: node.id, target: nodes[index + 1]!.id })),
-    settings: { stopOtherAutomations: true, priority: 100 },
+    settings: { stopOtherAutomations: true, priority: 100, reentry: "once" },
   };
 }
 
