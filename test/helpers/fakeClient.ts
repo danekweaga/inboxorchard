@@ -4,7 +4,7 @@
 import { InstagramApiError } from "../../src/api/client";
 import type { InstagramClient } from "../../src/api/client";
 
-type Method = "privateReply" | "reply" | "like" | "quick" | "text" | "followers";
+type Method = "privateReply" | "reply" | "like" | "quick" | "text" | "followers" | "profile";
 
 export class FakeClient {
   calls: Record<Method, unknown[]> = {
@@ -14,6 +14,7 @@ export class FakeClient {
     quick: [],
     text: [],
     followers: [],
+    profile: [],
   };
   /** How many upcoming calls of each method should throw a (non-rate-limit) error. */
   failNext: Partial<Record<Method, number>> = {};
@@ -25,6 +26,7 @@ export class FakeClient {
    */
   deliverThenFailNext: Partial<Record<Method, number>> = {};
   followers = 100;
+  userFollowsBusiness = false;
 
   private guard(m: Method): void {
     const n = this.failNext[m] ?? 0;
@@ -78,6 +80,10 @@ export class FakeClient {
   async getFollowersCount() {
     this.calls.followers.push({});
     return this.followers;
+  }
+  async getUserProfile(instagramScopedId: string) {
+    this.calls.profile.push({ instagramScopedId });
+    return { id: instagramScopedId, is_user_follow_business: this.userFollowsBusiness };
   }
 
   asClient(): InstagramClient {

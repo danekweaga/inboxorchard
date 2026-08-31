@@ -82,6 +82,16 @@ export interface IgConversation {
   messages?: { data?: IgMessage[] };
 }
 
+export interface IgUserProfile {
+  id: string;
+  name?: string;
+  username?: string;
+  profile_pic?: string;
+  follower_count?: number;
+  is_user_follow_business?: boolean;
+  is_business_follow_user?: boolean;
+}
+
 export const REQUIRED_WEBHOOK_FIELDS = ["comments", "messages", "messaging_postbacks", "mentions"] as const;
 
 export class InstagramClient {
@@ -287,6 +297,13 @@ export class InstagramClient {
   async getFollowersCount(): Promise<number | undefined> {
     const me = await this.get<IgProfile>(`/me`, { fields: "followers_count" });
     return me.followers_count;
+  }
+
+  /** Profile fields for an Instagram-scoped person who interacted with this account. */
+  getUserProfile(instagramScopedId: string): Promise<IgUserProfile> {
+    return this.get<IgUserProfile>(`/${instagramScopedId}`, {
+      fields: "id,name,username,profile_pic,follower_count,is_user_follow_business,is_business_follow_user",
+    });
   }
 }
 

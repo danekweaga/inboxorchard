@@ -196,6 +196,26 @@ export class AutomationExecutor {
             else buttons.push({ type: "postback", title, payload: typeof button.payload === "string" ? button.payload : `NODE_${node.id}` });
           }
         }
+        const followWaitId = chooseNext(definition, node, context);
+        const followWait = definition.nodes.find((item) => item.id === followWaitId);
+        const isFollowPrompt = buttons.some((button) => button.payload === "FOLLOW_CONFIRMED")
+          && followWait?.type === "wait_for_response"
+          && followWait.config.field === "follow_confirmed";
+        if (isFollowPrompt && context.instagramUserId && this.env.MOCK_MODE !== "true") {
+          try {
+            const runtime = await buildRuntime(this.env);
+            const profile = runtime ? await runtime.client.getUserProfile(context.instagramUserId) : null;
+            if (profile?.is_user_follow_business === true) {
+              context.variables.follow_confirmed = true;
+              return {
+                nextNodeId: chooseNext(definition, followWait, context),
+                output: { skipped: true, reason: "already_following" },
+              };
+            }
+          } catch (error) {
+            console.warn(`[inbox-orchard] follower lookup unavailable; showing confirmation prompt: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         return { output: await this.sendMessage(run, context, render(String(node.config.text ?? ""), context), { buttons }, node.id) };
       }
       case "send_image":

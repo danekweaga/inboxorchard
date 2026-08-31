@@ -142,6 +142,20 @@ describe("comment handling: trigger, dedup, idempotency", () => {
   });
 });
 
+describe("follow gate", () => {
+  it("skips the follow prompt when Meta says the person already follows", async () => {
+    client.userFollowsBusiness = true;
+    await upsertCampaign(db, campaign({ check_follow: true }), true);
+    await engine.handleComment(comment());
+    await engine.handleMessage(message({ payload: "OPENING_TAP" }));
+
+    expect(client.calls.profile).toHaveLength(1);
+    expect(client.calls.quick).toHaveLength(0);
+    expect(client.calls.text).toHaveLength(1);
+    expect((await getConversation(db, "user1", "c1"))?.state).toBe("DONE");
+  });
+});
+
 describe("message handling: full funnel", () => {
   it("advances tap → follow → email → deliver with correct events and state", async () => {
     await upsertCampaign(db, campaign({ check_follow: true, ask_email: true }), true);

@@ -234,6 +234,14 @@ export class Engine {
 
     switch (target) {
       case "AWAITING_FOLLOW": {
+        if (await this.userAlreadyFollows(igsid)) {
+          await logEvent(this.db, campaign.campaign_id, "follow_confirmed", igsid);
+          await this.enterState(campaign, igsid, afterFollow(campaign), {
+            ...opts,
+            patch: { ...opts.patch, followed: 1 },
+          });
+          break;
+        }
         const ok = await this.trySend(
           () =>
             this.client.sendQuickReplies(igsid, campaign.copy.follow_gate ?? "Follow us first 🙌", [
@@ -291,7 +299,16 @@ export class Engine {
     }
   }
 
-  // ---- verify_follow_count helpers (weak heuristic) ----
+  private async userAlreadyFollows(igsid: string): Promise<boolean> {
+    try {
+      return (await this.client.getUserProfile(igsid)).is_user_follow_business === true;
+    } catch (error) {
+      console.warn(`[inbox-orchard] follower lookup unavailable for ${igsid}; showing confirmation prompt: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
+  // ---- legacy follower-count helpers ----
 
   private baselineKey(campaign: Campaign, igsid: string): string {
     return `follow_baseline:${campaign.campaign_id}:${igsid}`;
