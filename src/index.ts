@@ -15,6 +15,7 @@ import { buildRuntime } from "./runtime";
 import { processDurableJob } from "./services/jobs";
 import { processDueSequences } from "./services/sequences";
 import { ensureInstagramWebhookSubscription } from "./services/webhook-subscription";
+import { refreshInstagramMedia } from "./services/media-sync";
 import type { Env } from "./types";
 
 type AppEnv = { Bindings: Env };
@@ -46,6 +47,10 @@ const handler = {
   async scheduled(event: ScheduledController, env: Env, context: ExecutionContext): Promise<void> {
     if (event.cron === "0 3 * * *") {
       context.waitUntil(refreshTokenIfDue(env).then((result) => console.log(`[dmflow] token refresh: ${result.status}`)));
+      context.waitUntil(refreshInstagramMedia(env, 100).then(
+        (media) => console.log(`[inbox-orchard] refreshed ${media.length} Instagram media items`),
+        (error) => console.warn("[inbox-orchard] scheduled media refresh unavailable", error),
+      ));
     }
     if (event.cron !== "* * * * *") return;
 

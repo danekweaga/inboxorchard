@@ -53,6 +53,7 @@ export interface IgMedia {
   id: string;
   caption?: string;
   media_type?: string;
+  media_product_type?: string;
   media_url?: string;
   thumbnail_url?: string;
   permalink?: string;
@@ -275,7 +276,7 @@ export class InstagramClient {
   /** The connected account's media (for the builder media picker + preview). */
   async getMedia(limit = 25): Promise<IgMedia[]> {
     const res = await this.get<{ data?: IgMedia[] }>(`/me/media`, {
-      fields: "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count",
+      fields: "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count",
       limit: String(limit),
     });
     return res.data ?? [];

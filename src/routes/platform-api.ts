@@ -20,6 +20,7 @@ import { enqueueJob } from "../queue/jobs";
 import { sealSecret, timingSafeEqual } from "../security/crypto";
 import { createSession, requestOriginAllowed, SESSION_COOKIE, verifySession } from "../security/session";
 import { sendManualReply, suggestReply } from "../services/messaging";
+import { refreshInstagramMedia } from "../services/media-sync";
 import { createSequence } from "../services/sequences";
 import { buildRuntime } from "../runtime";
 import type { Env } from "../types";
@@ -111,10 +112,8 @@ platformApi.get("/instagram/stories", async (context) => {
 });
 
 platformApi.get("/instagram/media", async (context) => {
-  const runtime = await buildRuntime(context.env);
-  if (!runtime) return jsonError("Instagram is not connected or its access token has expired", 400);
   try {
-    return context.json({ media: await runtime.client.getMedia(30) });
+    return context.json({ media: await refreshInstagramMedia(context.env, 100) });
   } catch (error) {
     console.error("[inbox-orchard] failed to load Instagram media", error);
     return jsonError(error instanceof Error ? error.message : "Could not load Instagram posts and Reels", 502);
@@ -154,14 +153,22 @@ platformApi.get("/dashboard", async (context) => {
 });
 
 platformApi.get("/content", async (context) => {
+  let syncWarning: string | null = null;
+  try {
+    await refreshInstagramMedia(context.env, 100);
+  } catch (error) {
+    syncWarning = error instanceof Error ? error.message : "Instagram content could not be refreshed";
+    console.warn("[inbox-orchard] content media refresh unavailable", error);
+  }
   const rows = await context.env.DB.prepare(
-    `SELECT m.id, m.media_type, m.caption, m.permalink, m.published_at AS timestamp, m.comments_count,
+    `SELECT m.id, m.media_type, m.caption, m.permalink, m.thumbnail_url, m.media_url,
+      m.published_at AS timestamp, m.comments_count,
       (SELECT COUNT(*) FROM conversations_v2 c WHERE c.source_external_id = m.id) AS dm_conversations,
       (SELECT COUNT(*) FROM contacts ct WHERE ct.source_content_id = m.id AND (ct.email IS NOT NULL OR ct.lead_score > 0)) AS leads,
       (SELECT COUNT(*) FROM link_clicks lc JOIN tracked_links tl ON tl.id = lc.tracked_link_id WHERE tl.source_content_id = m.id) AS clicks
      FROM instagram_media m ORDER BY COALESCE(m.published_at, m.synced_at) DESC LIMIT 100`,
   ).all();
-  return context.json({ content: rows.results ?? [] });
+  return context.json({ content: rows.results ?? [], syncWarning });
 });
 
 platformApi.get("/inbox", async (context) => context.json({
