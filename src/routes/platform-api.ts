@@ -7,6 +7,7 @@ import { deleteAutomation, getAutomation, listAutomations, publishAutomation, sa
 import { simulateWorkflow } from "../automation/simulator";
 import { starterDefinition } from "../automation/schema";
 import { AUTOMATION_TEMPLATES } from "../automation/templates";
+import { deleteCustomAutomationTemplate, listCustomAutomationTemplates, saveCustomAutomationTemplate } from "../automation/custom-templates";
 import { validateWorkflow } from "../automation/validator";
 import { id, sha256, unixNow } from "../core/id";
 import { findOrCreateContactConversation, getContactDetail, getConversationDetail, incrementUsage, listContactsV2, listInbox, persistInboundMessage, usageSummary } from "../data/platform";
@@ -355,7 +356,40 @@ platformApi.post("/custom-fields", async (context) => {
 
 platformApi.get("/automations", async (context) => context.json({ automations: await listAutomations(context.env.DB) }));
 platformApi.get("/automations/starter", (context) => context.json({ definition: starterDefinition() }));
-platformApi.get("/automations/templates", (context) => context.json({ templates: AUTOMATION_TEMPLATES }));
+platformApi.get("/automations/templates", async (context) => context.json({
+  templates: [
+    ...(await listCustomAutomationTemplates(context.env.DB)),
+    ...AUTOMATION_TEMPLATES.map((template) => ({ ...template, name: template.definition.name, description: template.definition.description, custom: false })),
+  ],
+}));
+
+platformApi.post("/automations/templates", async (context) => {
+  const payload = await safeJson(context.req.raw);
+  let definition = payload.definition;
+  let sourceAutomationId: string | undefined;
+  if (typeof payload.automationId === "string") {
+    const automation = await getAutomation(context.env.DB, payload.automationId);
+    if (!automation) return jsonError("Automation not found", 404);
+    definition = automation.published?.definition ?? automation.draft?.definition;
+    sourceAutomationId = automation.automation.id;
+  }
+  if (!definition) return jsonError("Automation definition is required", 400);
+  const fallbackName = typeof definition === "object" && definition && "name" in definition ? String(definition.name) : "Saved automation";
+  try {
+    const saved = await saveCustomAutomationTemplate(context.env.DB, {
+      name: typeof payload.name === "string" ? payload.name : fallbackName,
+      definition,
+      sourceAutomationId,
+    });
+    return context.json(saved, 201);
+  } catch (error) { return jsonError(errorMessage(error), 400); }
+});
+
+platformApi.delete("/automations/templates/:id", async (context) => {
+  return await deleteCustomAutomationTemplate(context.env.DB, context.req.param("id"))
+    ? context.json({ ok: true })
+    : jsonError("Template not found", 404);
+});
 
 platformApi.get("/automations/:id", async (context) => {
   const automation = await getAutomation(context.env.DB, context.req.param("id"));
@@ -678,9 +712,10 @@ platformApi.put("/settings/:key", async (context) => {
 });
 
 platformApi.get("/backup", async (context) => {
-  const [automations, versions, tags, fields, resources, templates, sequences, sequenceSteps, agents, knowledge, settings] = await Promise.all([
+  const [automations, versions, automationTemplates, tags, fields, resources, templates, sequences, sequenceSteps, agents, knowledge, settings] = await Promise.all([
     context.env.DB.prepare("SELECT * FROM automations").all(),
     context.env.DB.prepare("SELECT * FROM automation_versions").all(),
+    context.env.DB.prepare("SELECT * FROM automation_templates").all(),
     context.env.DB.prepare("SELECT * FROM tags").all(),
     context.env.DB.prepare("SELECT * FROM custom_fields").all(),
     context.env.DB.prepare("SELECT id, name, description, type, target_url, r2_key, file_name, mime_type, size_bytes, active, created_at, updated_at FROM resources").all(),
@@ -692,7 +727,7 @@ platformApi.get("/backup", async (context) => {
     context.env.DB.prepare("SELECT * FROM settings").all(),
   ]);
   return context.json({ schemaVersion: 1, exportedAt: new Date().toISOString(), includesSecrets: false, data: {
-    automations: automations.results ?? [], automationVersions: versions.results ?? [], tags: tags.results ?? [],
+    automations: automations.results ?? [], automationVersions: versions.results ?? [], automationTemplates: automationTemplates.results ?? [], tags: tags.results ?? [],
     customFields: fields.results ?? [], resources: resources.results ?? [], emailTemplates: templates.results ?? [],
     sequences: sequences.results ?? [], sequenceSteps: sequenceSteps.results ?? [], aiAgents: agents.results ?? [],
     knowledge: knowledge.results ?? [], settings: settings.results ?? [],
@@ -793,6 +828,7 @@ function isSqlValue(value: unknown): value is string | number | null {
 const BACKUP_TABLES = [
   { dataKey: "automations", table: "automations", columns: ["id", "name", "description", "status", "trigger_type", "priority", "draft_version_id", "published_version_id", "created_at", "updated_at"] },
   { dataKey: "automationVersions", table: "automation_versions", columns: ["id", "automation_id", "version", "status", "definition_json", "checksum", "created_at", "published_at"] },
+  { dataKey: "automationTemplates", table: "automation_templates", columns: ["id", "name", "description", "category", "definition_json", "source_automation_id", "created_at", "updated_at"] },
   { dataKey: "tags", table: "tags", columns: ["id", "name", "color", "created_at"] },
   { dataKey: "customFields", table: "custom_fields", columns: ["id", "name", "type", "options_json", "created_at", "updated_at"] },
   { dataKey: "resources", table: "resources", columns: ["id", "name", "description", "type", "target_url", "r2_key", "file_name", "mime_type", "size_bytes", "active", "created_at", "updated_at"] },
