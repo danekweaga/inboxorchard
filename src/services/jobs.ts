@@ -7,8 +7,8 @@ import type { Env } from "../types";
 export async function processDurableJob(env: Env, jobId: string): Promise<boolean> {
   const row = await claimJob(env.DB, jobId);
   if (!row) return true;
-  const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
   try {
+    const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
     switch (row.type) {
       case "webhook_event":
         await processWebhookEvent(env, requiredString(payload.eventId, "eventId"));

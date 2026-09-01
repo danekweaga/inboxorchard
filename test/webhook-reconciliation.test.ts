@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { starterDefinition } from "../src/automation/schema";
 import { saveAutomationDraft } from "../src/automation/repository";
 import { reconcilePendingWebhookJobs, requeueStaleJobs } from "../src/queue/jobs";
+import { processDurableJob } from "../src/services/jobs";
 import type { Env } from "../src/types";
 import { makeTestDb } from "./helpers/fakeD1";
 
@@ -58,5 +59,18 @@ describe("webhook and journey recovery", () => {
     expect(await requeueStaleJobs(db, 60)).toBe(1);
     expect(await db.prepare("SELECT status, claimed_at FROM durable_jobs WHERE id = 'job_stale'").first())
       .toMatchObject({ status: "retrying", claimed_at: null });
+  });
+
+  it("records malformed job payloads as retryable failures", async () => {
+    const db = makeTestDb();
+    await db.prepare(
+      `INSERT INTO durable_jobs
+        (id, type, payload_json, status, priority, attempt_count, available_at, created_at, updated_at)
+       VALUES ('job_bad_json', 'automation_resume', '{bad json', 'pending', 10, 0, 1, 1, 1)`,
+    ).run();
+
+    expect(await processDurableJob({ DB: db } as Env, "job_bad_json")).toBe(false);
+    expect(await db.prepare("SELECT status, attempt_count, last_error FROM durable_jobs WHERE id = 'job_bad_json'").first())
+      .toMatchObject({ status: "retrying", attempt_count: 1 });
   });
 });
