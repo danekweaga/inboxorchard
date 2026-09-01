@@ -40,6 +40,17 @@ describe("structured workflow validation", () => {
     definition.edges = [{ id: "opening-wait", source: "opening", target: "wait" }];
     expect(validateWorkflow(definition).issues.some((issue) => issue.code === "wait_button_requires_postback")).toBe(true);
   });
+
+  it("accepts a tap-only reply button because the runtime assigns its postback payload", () => {
+    const definition = starterDefinition();
+    definition.nodes = [
+      { id: "opening", type: "send_buttons", label: "Opening", position: { x: 0, y: 0 }, config: { text: "Tap", buttons: [{ title: "Continue" }] } },
+      { id: "wait", type: "wait_for_response", label: "Wait", position: { x: 200, y: 0 }, config: { field: "confirmed" } },
+    ];
+    definition.startNodeId = "opening";
+    definition.edges = [{ id: "opening-wait", source: "opening", target: "wait" }];
+    expect(validateWorkflow(definition).valid).toBe(true);
+  });
 });
 
 describe("automation re-entry protection", () => {

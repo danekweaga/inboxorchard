@@ -47,13 +47,15 @@ export function validateWorkflow(input: unknown): WorkflowValidation {
     const source = definition.nodes.find((node) => node.id === edge.source);
     const target = definition.nodes.find((node) => node.id === edge.target);
     if (source?.type === "send_buttons" && target?.type === "wait_for_response") {
-      const hasPostback = Array.isArray(source.config.buttons) && source.config.buttons.some((button) =>
-        button && typeof button === "object" && typeof (button as Record<string, unknown>).payload === "string",
-      );
+      const hasPostback = Array.isArray(source.config.buttons) && source.config.buttons.some((button) => {
+        if (!button || typeof button !== "object") return false;
+        const value = button as Record<string, unknown>;
+        return typeof value.payload === "string" || value.type === "postback" || typeof value.url !== "string";
+      });
       if (!hasPostback) issues.push({
         level: "error",
         code: "wait_button_requires_postback",
-        message: `${source.label}: add a reply button so the journey can continue after it is tapped.`,
+        message: `${source.label}: website-link buttons cannot resume the journey. Add a separate Continue reply button.`,
         nodeId: source.id,
       });
     }

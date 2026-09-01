@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstagramClient, REQUIRED_WEBHOOK_FIELDS } from "../src/api/client";
 import { validateWorkflow } from "../src/automation/validator";
-import { composeGuidedJourney, createGuidedJourney, JOURNEY_IDS } from "../src/client/guided-journey";
+import { composeGuidedJourney, createGuidedJourney, JOURNEY_IDS, repairGuidedJourneyButtons } from "../src/client/guided-journey";
 
 describe("guided DM journey", () => {
   it("creates an executable comment funnel with follow and thank-you stages", () => {
@@ -59,6 +59,17 @@ describe("guided DM journey", () => {
     const journey = composeGuidedJourney("instagram_comment", initial.nodes, { follow: true, email: false, thanks: true });
     expect(journey.nodes.find((node) => node.id === JOURNEY_IDS.opening)?.config.buttons).toEqual([
       { title: "Send it", payload: "OPENING_CONFIRMED" },
+    ]);
+  });
+
+  it("adds the stored follow-confirmation postback when an older journey only has a profile link", () => {
+    const initial = createGuidedJourney("instagram_comment");
+    const follow = initial.nodes.find((node) => node.id === JOURNEY_IDS.follow)!;
+    follow.config.buttons = [{ title: "Follow me", url: "https://instagram.com/example" }];
+    const repaired = repairGuidedJourneyButtons(initial.nodes);
+    expect(repaired.find((node) => node.id === JOURNEY_IDS.follow)?.config.buttons).toEqual([
+      { title: "Follow me", url: "https://instagram.com/example" },
+      { title: "I’m following", payload: "FOLLOW_CONFIRMED" },
     ]);
   });
 });

@@ -31,6 +31,33 @@ export function isGuidedJourney(nodes: AutomationNode[]): boolean {
   return ids.has(JOURNEY_IDS.opening) && ids.has(JOURNEY_IDS.delivery);
 }
 
+/** Repair older/simple-editor button configs while preserving the user's node layout and copy. */
+export function repairGuidedJourneyButtons(nodes: AutomationNode[]): AutomationNode[] {
+  if (!isGuidedJourney(nodes)) return nodes;
+  return nodes.map((item) => {
+    if (item.id === JOURNEY_IDS.opening && item.type === "send_buttons") {
+      const buttons = Array.isArray(item.config.buttons) ? item.config.buttons.filter(isRecord) : [];
+      if (buttons.some(isReplyButton)) return item;
+      const first = buttons[0] ?? { title: "Send it" };
+      return { ...item, config: { ...item.config, buttons: [{ ...first, url: undefined, payload: "OPENING_CONFIRMED" }] } };
+    }
+    if (item.id === JOURNEY_IDS.follow && item.type === "send_buttons") {
+      const buttons = Array.isArray(item.config.buttons) ? item.config.buttons.filter(isRecord) : [];
+      const confirmationIndex = buttons.findIndex((button) => button.payload === "FOLLOW_CONFIRMED" || isReplyButton(button));
+      if (confirmationIndex >= 0) {
+        const repaired = buttons.map((button, index) => index === confirmationIndex
+          ? { ...button, url: undefined, payload: "FOLLOW_CONFIRMED" }
+          : button);
+        return { ...item, config: { ...item.config, buttons: repaired } };
+      }
+      const confirmation = { title: "I’m following", payload: "FOLLOW_CONFIRMED" };
+      const repaired = buttons.length < 3 ? [...buttons, confirmation] : [...buttons.slice(0, 2), confirmation];
+      return { ...item, config: { ...item.config, buttons: repaired } };
+    }
+    return item;
+  });
+}
+
 export function createGuidedJourney(triggerType: TriggerType, previous: AutomationNode[] = []): GuidedJourney {
   const publicReply = previous.find((node) => node.type === "public_comment_reply");
   const existingResource = previous.find((node) => node.type === "send_resource");
@@ -96,7 +123,7 @@ export function composeGuidedJourney(
   );
   ordered.push(required(JOURNEY_IDS.end, "end", "End", {}));
 
-  const positioned = arrangeAutomationNodes(ordered);
+  const positioned = arrangeAutomationNodes(repairGuidedJourneyButtons(ordered));
   const edges = positioned.slice(0, -1).map((item, index) => ({
     id: `journey_edge_${item.id}_${positioned[index + 1]!.id}`,
     source: item.id,
@@ -112,4 +139,12 @@ function node(
   config: Record<string, unknown>,
 ): AutomationNode {
   return { id, type, label, config, position: { x: 0, y: 0 } };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isReplyButton(button: Record<string, unknown>): boolean {
+  return typeof button.payload === "string" || button.type === "postback" || typeof button.url !== "string";
 }
