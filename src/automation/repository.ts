@@ -13,6 +13,7 @@ export interface AutomationListItem {
   published_version_id: string | null;
   created_at: number;
   updated_at: number;
+  active_run_count?: number;
 }
 
 export interface AutomationVersionRow {
@@ -27,7 +28,11 @@ export interface AutomationVersionRow {
 }
 
 export async function listAutomations(db: D1Database): Promise<AutomationListItem[]> {
-  const rows = await db.prepare("SELECT * FROM automations ORDER BY updated_at DESC").all<AutomationListItem>();
+  const rows = await db.prepare(
+    `SELECT a.*,
+      (SELECT COUNT(*) FROM automation_runs r WHERE r.automation_id = a.id AND r.status IN ('running', 'waiting')) AS active_run_count
+     FROM automations a ORDER BY a.updated_at DESC`,
+  ).all<AutomationListItem>();
   return rows.results ?? [];
 }
 
