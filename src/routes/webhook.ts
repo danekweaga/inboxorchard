@@ -1,7 +1,7 @@
 // Durable Instagram webhook gateway: verify, persist raw delivery, deduplicate, then enqueue.
 
 import { id, sha256, unixNow } from "../core/id";
-import { enqueueJob } from "../queue/jobs";
+import { ensureWebhookEventJob } from "../queue/jobs";
 import type { Env } from "../types";
 import { metaAppSecret, metaVerifyToken } from "../types";
 import { json } from "./http";
@@ -43,9 +43,13 @@ export async function handleWebhookEvent(env: Env, req: Request): Promise<Respon
      VALUES (?, 'instagram', ?, ?, ?, ?, ?, 'pending', 0)`,
   ).bind(eventId, externalEventId, idempotencyKey, eventType, raw, receivedAt).run();
   if ((result.meta.changes ?? 0) === 0) {
+    const existing = await env.DB.prepare(
+      "SELECT id, status FROM webhook_events WHERE idempotency_key = ?",
+    ).bind(idempotencyKey).first<{ id: string; status: string }>();
+    if (existing && existing.status !== "processed") await ensureWebhookEventJob(env, existing.id);
     return json({ ok: true, duplicate: true });
   }
-  await enqueueJob(env, "webhook_event", { eventId }, { priority: 10 });
+  await ensureWebhookEventJob(env, eventId);
   return json({ ok: true, accepted: true, event_id: eventId }, 202);
 }
 

@@ -16,7 +16,7 @@ import { nodeTypes, triggerTypes } from "../automation/schema";
 import { api, ApiError, post, put, remove } from "./api";
 import { composeGuidedJourney, createGuidedJourney, isGuidedJourney, JOURNEY_IDS, repairGuidedJourneyButtons, type GuidedJourney, type JourneyToggles } from "./guided-journey";
 import { arrangeAutomationNodes, compactLinearAutomation } from "./flow-layout";
-import { parseSmartList } from "./smart-paste";
+import { buildAiListPrompt, parseSmartList } from "./smart-paste";
 
 type PageKey = "dashboard" | "inbox" | "contacts" | "automations" | "campaigns" | "templates" | "simulator" | "content" | "analytics" | "resources" | "email" | "ai" | "integrations" | "settings" | "usage" | "backup";
 type Notify = (message: string, kind?: "success" | "error") => void;
@@ -311,6 +311,30 @@ function AutomationsPage({ notify, initialDefinition, clearInitial }: { notify: 
 
 interface CampaignContentRow { id: string; media_type: string | null; caption: string | null; permalink: string | null; thumbnail_url: string | null; media_url: string | null; timestamp: number | null; comments_count: number | null; dm_conversations: number; leads: number; clicks: number }
 interface ActiveCampaignDetail { item: AutomationListItem; definition: AutomationDefinition }
+interface ActiveCampaignGroup { key: string; media: CampaignContentRow | null; appliesToAll: boolean; campaigns: ActiveCampaignDetail[] }
+
+function groupActiveCampaigns(campaigns: ActiveCampaignDetail[], content: CampaignContentRow[]): ActiveCampaignGroup[] {
+  const mediaById = new Map(content.map((item) => [item.id, item]));
+  const groups = new Map<string, ActiveCampaignGroup>();
+  const add = (key: string, media: CampaignContentRow | null, appliesToAll: boolean, campaign: ActiveCampaignDetail) => {
+    const group = groups.get(key) ?? { key, media, appliesToAll, campaigns: [] };
+    if (!group.campaigns.some((item) => item.item.id === campaign.item.id)) group.campaigns.push(campaign);
+    groups.set(key, group);
+  };
+  for (const campaign of campaigns) {
+    const ids = Array.isArray(campaign.definition.trigger.config.mediaIds)
+      ? campaign.definition.trigger.config.mediaIds.filter((value): value is string => typeof value === "string")
+      : [];
+    if (ids.length) {
+      for (const mediaId of ids) add(`media:${mediaId}`, mediaById.get(mediaId) ?? null, false, campaign);
+    } else {
+      const appliesToAll = ["instagram_comment", "story_reply", "story_mention"].includes(campaign.definition.trigger.type);
+      add(`trigger:${campaign.definition.trigger.type}`, null, appliesToAll, campaign);
+    }
+  }
+  return [...groups.values()].sort((a, b) => Number(b.media?.timestamp ?? 0) - Number(a.media?.timestamp ?? 0));
+}
+
 function ActiveCampaignsPage({ notify }: { notify: Notify }) {
   const { data, loading, reload } = useRemote<{ automations: AutomationListItem[] }>("/automations", notify);
   const { data: contentData, loading: contentLoading } = useRemote<{ content: CampaignContentRow[] }>("/content", notify);
@@ -328,13 +352,15 @@ function ActiveCampaignsPage({ notify }: { notify: Notify }) {
   const stopCampaign = async (campaign: ActiveCampaignDetail) => { try { await post(`/automations/${campaign.item.id}/status`, { status: "paused" }); reload(); notify(`${campaign.item.name} stopped — new comments and DMs will no longer trigger it`); } catch (error) { notify(errorMessage(error), "error"); } };
   const deleteCampaign = async (campaign: ActiveCampaignDetail) => { if (!window.confirm(`Permanently delete “${campaign.item.name}”? This removes the automation, not the Instagram content.`)) return; try { await remove(`/automations/${campaign.item.id}`); reload(); notify("Campaign deleted"); } catch (error) { notify(errorMessage(error), "error"); } };
   const content = contentData?.content ?? [];
-  return <><PageHeader eyebrow="LIVE CAMPAIGNS" title="Active campaigns" description="See exactly which Instagram content has a live automation attached, then stop, reuse, or remove the campaign." actions={<button className="secondary" onClick={reload}><RefreshCw size={16} /> Refresh status</button>} />
-    {loading || detailLoading || contentLoading ? <InlineLoader /> : !campaigns.length ? <Panel><EmptyState icon={Play} title="No active campaigns" text="Publish an automation and it will appear here with its connected Instagram content." action={<button className="primary" onClick={() => { window.location.hash = "automations"; }}><Zap size={16} /> Go to automations</button>} /></Panel> : <div className="live-campaign-grid">{campaigns.map((campaign) => {
-      const selectedIds = Array.isArray(campaign.definition.trigger.config.mediaIds) ? campaign.definition.trigger.config.mediaIds.filter((value): value is string => typeof value === "string") : [];
-      const appliesToAll = selectedIds.length === 0 && ["instagram_comment", "story_reply", "story_mention"].includes(campaign.definition.trigger.type);
-      const attached = (selectedIds.length ? content.filter((item) => selectedIds.includes(item.id)) : content).slice(0, 4);
-      return <article className="live-campaign-card" key={campaign.item.id}><div className="campaign-media-strip">{attached.length ? attached.map((media) => { const preview = media.thumbnail_url ?? (media.media_type === "IMAGE" || media.media_type === "CAROUSEL_ALBUM" ? media.media_url : null); const visual = preview ? <img src={preview} alt="" /> : <span><Camera size={22} /></span>; return media.permalink ? <a key={media.id} href={media.permalink} target="_blank" rel="noreferrer" title={media.caption ?? "Open on Instagram"}>{visual}</a> : <div key={media.id}>{visual}</div>; }) : <div className="campaign-media-empty"><Camera size={26} /><span>{selectedIds.length ? "Selected content is waiting for Meta details" : "No specific content selected"}</span></div>}<b><span /> LIVE</b></div><div className="live-campaign-body"><div className="live-campaign-title"><div><span>{humanize(campaign.definition.trigger.type)}</span><h2>{campaign.item.name}</h2></div><strong>{attached.length || (appliesToAll ? "ALL" : 0)}<small>{appliesToAll ? "posts & reels" : "content items"}</small></strong></div><p>{campaign.item.description || campaign.definition.description || "Live Instagram automation"}</p><div className="campaign-scope"><Camera size={15} /><span><strong>{appliesToAll ? "Runs on any matching content" : selectedIds.length ? `Attached to ${selectedIds.length} selected item${selectedIds.length === 1 ? "" : "s"}` : "Triggered by incoming messages"}</strong><small>{campaign.item.active_run_count ? `${campaign.item.active_run_count} conversation${campaign.item.active_run_count === 1 ? "" : "s"} currently in progress` : "No conversations currently in progress"}</small></span></div><div className="live-campaign-actions"><button className="secondary" onClick={() => void stopCampaign(campaign)}><Pause size={15} /> Stop campaign</button><button className="secondary" onClick={() => { window.location.hash = "automations"; }}><Settings size={15} /> Manage</button><button className="secondary danger-action" disabled={Boolean(campaign.item.active_run_count)} title={campaign.item.active_run_count ? "Wait for active conversations to finish before deleting" : "Permanently delete campaign"} onClick={() => void deleteCampaign(campaign)}><Trash2 size={15} /> Delete</button></div></div></article>;
-    })}</div>}
+  const groups = groupActiveCampaigns(campaigns, content);
+  const postCount = groups.filter((group) => Boolean(group.media)).length;
+  return <><PageHeader eyebrow="LIVE CAMPAIGNS" title="Active campaigns" description="Each Instagram post appears once, even when several live campaigns are attached to it." actions={<button className="secondary" onClick={reload}><RefreshCw size={16} /> Refresh status</button>} />
+    {loading || detailLoading || contentLoading ? <InlineLoader /> : !campaigns.length ? <Panel><EmptyState icon={Play} title="No active campaigns" text="Publish an automation and it will appear here with its connected Instagram content." action={<button className="primary" onClick={() => { window.location.hash = "automations"; }}><Zap size={16} /> Go to automations</button>} /></Panel> : <><div className="campaign-summary"><span><strong>{postCount}</strong> selected post{postCount === 1 ? "" : "s"}</span><span><strong>{campaigns.length}</strong> live campaign{campaigns.length === 1 ? "" : "s"}</span></div><div className="live-campaign-grid">{groups.map((group) => {
+      const media = group.media;
+      const preview = media?.thumbnail_url ?? ((media?.media_type === "IMAGE" || media?.media_type === "CAROUSEL_ALBUM") ? media.media_url : null);
+      const visual = preview ? <img src={preview} alt="" /> : <span><Camera size={28} /></span>;
+      return <article className="live-campaign-card" key={group.key}><div className="campaign-media-strip single">{media ? (media.permalink ? <a href={media.permalink} target="_blank" rel="noreferrer" title={media.caption ?? "Open on Instagram"}>{visual}</a> : <div>{visual}</div>) : <div className="campaign-media-empty"><Camera size={26} /><span>{group.appliesToAll ? "Runs on any matching post or Reel" : "This trigger is not tied to a post"}</span></div>}<b><span /> LIVE</b></div><div className="live-campaign-body"><div className="live-campaign-title"><div><span>{media ? humanize(media.media_type ?? "Instagram content") : "Account-wide trigger"}</span><h2>{media?.caption?.trim() || (group.appliesToAll ? "Any post or Reel" : humanize(group.campaigns[0]?.definition.trigger.type ?? "Instagram messages"))}</h2></div><strong>{group.campaigns.length}<small>campaign{group.campaigns.length === 1 ? "" : "s"}</small></strong></div><p>{media ? "All live automations attached to this content are grouped below." : "Live automations that listen across your account are grouped below."}</p><div className="content-campaign-list">{group.campaigns.map((campaign) => <section className="content-campaign-row" key={campaign.item.id}><div><span>{humanize(campaign.definition.trigger.type)}</span><strong>{campaign.item.name}</strong><small>{campaign.item.active_run_count ? `${campaign.item.active_run_count} conversation${campaign.item.active_run_count === 1 ? "" : "s"} in progress` : "Listening for new activity"}</small></div><div className="live-campaign-actions"><button className="secondary" onClick={() => void stopCampaign(campaign)}><Pause size={15} /> Stop</button><button className="secondary" onClick={() => { window.location.hash = "automations"; }}><Settings size={15} /> Manage</button><button className="secondary danger-action" disabled={Boolean(campaign.item.active_run_count)} title={campaign.item.active_run_count ? "Wait for active conversations to finish before deleting" : "Permanently delete campaign"} onClick={() => void deleteCampaign(campaign)}><Trash2 size={15} /> Delete</button></div></section>)}</div></div></article>;
+    })}</div></>}
   </>;
 }
 
@@ -431,7 +457,7 @@ function TriggerConfigFields({ trigger, notify, onChange }: { trigger: Automatio
   if (trigger.type === "story_reply" || trigger.type === "story_mention") return <StoryTriggerConfig trigger={trigger} notify={notify} onChange={onChange} />;
   if (trigger.type === "instagram_comment") return <><InstagramMediaPicker trigger={trigger} notify={notify} onChange={onChange} /><TextMatchFields config={trigger.config} noun="comment" onChange={onChange} /></>;
   if (trigger.type === "instagram_dm" || trigger.type === "keyword") return <TextMatchFields config={trigger.config} noun="DM" onChange={onChange} />;
-  if (trigger.type === "ai_intent") return <div className="guided-fields"><label>Intent name<input value={stringValue(trigger.config.intent)} onChange={(event) => onChange({ ...trigger.config, intent: event.target.value })} placeholder="Wants the free guide" /></label><label>Example messages<textarea value={listText(trigger.config.examples)} onChange={(event) => onChange({ ...trigger.config, examples: parseSmartList(event.target.value, "lines") })} placeholder={"Can I get the guide?\nSend me the template"} /></label><small className="field-help">Paste a numbered or bulleted list and each example becomes its own line automatically.</small><label>Minimum confidence<input type="number" min="0" max="1" step="0.05" value={numberValue(trigger.config.confidence, .75)} onChange={(event) => onChange({ ...trigger.config, confidence: Number(event.target.value) })} /></label></div>;
+  if (trigger.type === "ai_intent") return <div className="guided-fields"><label>Intent name<input value={stringValue(trigger.config.intent)} onChange={(event) => onChange({ ...trigger.config, intent: event.target.value })} placeholder="Wants the free guide" /></label><div className="field-heading"><span>Example messages</span><AiPromptButton prompt={buildAiListPrompt("intent_examples")} /></div><textarea aria-label="Example messages" value={listText(trigger.config.examples)} onChange={(event) => onChange({ ...trigger.config, examples: parseSmartList(event.target.value, "lines") })} placeholder={"Can I get the guide?\nSend me the template"} /><small className="field-help">Ask any AI with the copied prompt, then paste its answer here. Every item separates automatically.</small><label>Minimum confidence<input type="number" min="0" max="1" step="0.05" value={numberValue(trigger.config.confidence, .75)} onChange={(event) => onChange({ ...trigger.config, confidence: Number(event.target.value) })} /></label></div>;
   if (trigger.type === "scheduled") return <div className="guided-fields"><label>Run every (minutes)<input type="number" min="1" value={numberValue(trigger.config.intervalMinutes, 60)} onChange={(event) => onChange({ ...trigger.config, intervalMinutes: Math.max(1, Number(event.target.value)) })} /></label></div>;
   return <p className="config-note">This trigger starts from {humanize(trigger.type)} events. Use Advanced JSON on individual steps only when you need an uncommon setting.</p>;
 }
@@ -464,7 +490,7 @@ function KeywordListField({ values, noun, onChange }: { values: string[]; noun: 
     onChange(next);
     setDraft("");
   };
-  return <div className="keyword-list-field"><label>Keywords or phrases <span>({values.length} added)</span></label><div className="keyword-entry"><input value={draft} onChange={(event) => setDraft(event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (!text.trim()) return; event.preventDefault(); addKeywords(text); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addKeywords(); } }} placeholder="Type a keyword and press Enter" /><button type="button" className="secondary" onClick={() => addKeywords()} disabled={!draft.trim()}><Plus size={14} /> Add</button></div>{values.length > 0 && <div className="keyword-chips">{values.map((keyword) => <button type="button" key={keyword} onClick={() => onChange(values.filter((item) => item !== keyword))} title={`Remove ${keyword}`}><span>{keyword}</span><X size={12} /></button>)}</div>}<small className="field-help">Paste commas, lines, bullets, or a numbered list and every keyword becomes a separate chip automatically. Leave empty to accept any {noun.toLowerCase()}.</small></div>;
+  return <div className="keyword-list-field"><div className="field-heading"><label>Keywords or phrases <span>({values.length} added)</span></label><AiPromptButton prompt={buildAiListPrompt("keywords", noun)} /></div><div className="keyword-entry"><input value={draft} onChange={(event) => setDraft(event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData("text"); if (!text.trim()) return; event.preventDefault(); addKeywords(text); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addKeywords(); } }} placeholder="Type a keyword and press Enter" /><button type="button" className="secondary" onClick={() => addKeywords()} disabled={!draft.trim()}><Plus size={14} /> Add</button></div>{values.length > 0 && <div className="keyword-chips">{values.map((keyword) => <button type="button" key={keyword} onClick={() => onChange(values.filter((item) => item !== keyword))} title={`Remove ${keyword}`}><span>{keyword}</span><X size={12} /></button>)}</div>}<small className="field-help">Copy the AI prompt, add your offer, then paste the result here. Commas, lines, bullets, and numbered lists become separate chips automatically.</small></div>;
 }
 
 function GuidedDmJourney({ triggerType, nodes, notify, onApply, onUpdateNode }: { triggerType: TriggerType; nodes: AutomationNode[]; notify: Notify; onApply: (journey: GuidedJourney) => void; onUpdateNode: (nodeId: string, updates: Partial<AutomationNode>) => void }) {
@@ -492,7 +518,7 @@ function GuidedDmJourneyEditor({ triggerType, nodes, notify, onApply, onUpdateNo
   const followConfirmButton = objectAt(follow?.config.buttons, 1);
   const publicReply = nodeById(JOURNEY_IDS.publicReply);
   return <div className="journey-editor">
-    {publicReply && <div className="journey-stage"><span>PUBLIC REPLY</span><label>Reply variations<textarea value={listText(Array.isArray(publicReply.config.replies) ? publicReply.config.replies : [stringValue(publicReply.config.text)])} onChange={(event) => { const replies = parseSmartList(event.target.value, "lines"); updateConfig(publicReply.id, { replies, text: replies[0] ?? "" }); }} placeholder={"Sent it 🤝\nCheck your DMs 👀"} /></label><small className="field-help">Paste replies on separate lines or as a bulleted list; each becomes its own variation.</small></div>}
+    {publicReply && <div className="journey-stage"><span>PUBLIC REPLY</span><div className="field-heading"><span>Reply variations</span><AiPromptButton prompt={buildAiListPrompt("public_replies")} /></div><textarea aria-label="Reply variations" value={listText(Array.isArray(publicReply.config.replies) ? publicReply.config.replies : [stringValue(publicReply.config.text)])} onChange={(event) => { const replies = parseSmartList(event.target.value, "lines"); updateConfig(publicReply.id, { replies, text: replies[0] ?? "" }); }} placeholder={"Sent it 🤝\nCheck your DMs 👀"} /><small className="field-help">Copy the AI prompt, customize the offer, and paste the answer here. Each line becomes a variation.</small></div>}
     <div className="journey-stage"><span>INTRO MESSAGE</span><label>Opening DM<textarea value={stringValue(opening.config.text)} onChange={(event) => updateConfig(opening.id, { text: event.target.value })} /></label><label>Opening button<input value={stringValue(openingButton.title, "Send it")} onChange={(event) => updateConfig(opening.id, { buttons: [{ title: event.target.value, payload: "OPENING_CONFIRMED" }] })} /></label><small className="field-help">The person taps this before the rest of the journey continues.</small></div>
     <div className="journey-stage"><label className="checkbox-row"><input type="checkbox" checked={toggles.follow} onChange={(event) => recompose({ follow: event.target.checked })} /><span><b>They must follow first</b><small>Already-following people skip this automatically</small></span></label>{follow && <><label>Follow prompt<textarea value={stringValue(follow.config.text)} onChange={(event) => updateConfig(follow.id, { text: event.target.value })} /></label><label>Instagram profile URL<input type="url" value={stringValue(followProfileButton.url)} onChange={(event) => updateConfig(follow.id, { buttons: [{ ...followProfileButton, title: stringValue(followProfileButton.title, "Follow me"), url: event.target.value }, followConfirmButton] })} /></label><div className="two-field"><label>Profile button<input value={stringValue(followProfileButton.title, "Follow me")} onChange={(event) => updateConfig(follow.id, { buttons: [{ ...followProfileButton, title: event.target.value }, followConfirmButton] })} /></label><label>Confirmation button<input value={stringValue(followConfirmButton.title, "I’m following")} onChange={(event) => updateConfig(follow.id, { buttons: [followProfileButton, { ...followConfirmButton, title: event.target.value, payload: "FOLLOW_CONFIRMED" }] })} /></label></div><p className="config-note">Inbox Orchard checks Meta’s follower-status field first. Existing followers continue immediately; the confirmation prompt is only shown when they do not follow or Meta cannot return the status.</p></>}</div>
     <div className="journey-stage"><label className="checkbox-row"><input type="checkbox" checked={toggles.email} onChange={(event) => recompose({ email: event.target.checked })} /><span><b>Ask for their email</b><small>Validate and save it to the contact</small></span></label>{email && <label>Email question<textarea value={stringValue(email.config.text)} onChange={(event) => updateConfig(email.id, { text: event.target.value, field: "email" })} /></label>}</div>
@@ -504,6 +530,20 @@ function GuidedDmJourneyEditor({ triggerType, nodes, notify, onApply, onUpdateNo
 function objectAt(value: unknown, index: number): Record<string, unknown> {
   if (!Array.isArray(value)) return {};
   return isObject(value[index]) ? value[index] : {};
+}
+
+function AiPromptButton({ prompt }: { prompt: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2200);
+    } catch {
+      window.prompt("Copy this prompt into ChatGPT or another AI", prompt);
+    }
+  };
+  return <button type="button" className={`ai-prompt-button ${copied ? "copied" : ""}`} onClick={() => void copy()}>{copied ? <Check size={13} /> : <Sparkles size={13} />}{copied ? "Prompt copied" : "Copy AI prompt"}</button>;
 }
 
 function NodeConfigFields({ node, notify, onChange }: { node: AutomationNode; notify: Notify; onChange: ConfigChange }) {
@@ -531,7 +571,7 @@ function MessageField({ label, value, placeholder, onChange }: { label: string; 
 
 function PublicReplyFields({ config, onChange }: { config: Record<string, unknown>; onChange: ConfigChange }) {
   const replies = Array.isArray(config.replies) ? config.replies : stringValue(config.text) ? [stringValue(config.text)] : [];
-  return <div className="guided-fields"><label>Public replies<textarea value={listText(replies)} onChange={(event) => { const values = parseSmartList(event.target.value, "lines"); onChange({ ...config, replies: values, text: values[0] ?? "" }); }} placeholder={"Got you — check your DMs\nJust sent it 👀\nIt should be in your inbox now"} /></label><small className="field-help">Paste lines, bullets, or a numbered list and each becomes a separate reply. Commas inside a sentence stay intact.</small></div>;
+  return <div className="guided-fields"><div className="field-heading"><span>Public replies</span><AiPromptButton prompt={buildAiListPrompt("public_replies")} /></div><textarea aria-label="Public replies" value={listText(replies)} onChange={(event) => { const values = parseSmartList(event.target.value, "lines"); onChange({ ...config, replies: values, text: values[0] ?? "" }); }} placeholder={"Got you — check your DMs\nJust sent it 👀\nIt should be in your inbox now"} /><small className="field-help">Copy the AI prompt, customize the offer, and paste the answer here. Each line becomes a separate reply.</small></div>;
 }
 
 function ButtonMessageFields({ config, onChange }: { config: Record<string, unknown>; onChange: ConfigChange }) {

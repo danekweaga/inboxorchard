@@ -51,6 +51,34 @@ export async function enqueueJob(
   return jobId;
 }
 
+export async function ensureWebhookEventJob(env: Env, eventId: string): Promise<string> {
+  const existing = await env.DB.prepare(
+    `SELECT id FROM durable_jobs
+     WHERE type = 'webhook_event'
+       AND json_extract(payload_json, '$.eventId') = ?
+       AND status IN ('pending','queued','retrying','processing')
+     ORDER BY created_at DESC LIMIT 1`,
+  ).bind(eventId).first<{ id: string }>();
+  return existing?.id ?? enqueueJob(env, "webhook_event", { eventId }, { priority: 10 });
+}
+
+/** Rebuild jobs for webhook rows that were persisted before a queue insert failed. */
+export async function reconcilePendingWebhookJobs(env: Env, limit = 25): Promise<number> {
+  const rows = await env.DB.prepare(
+    `SELECT w.id FROM webhook_events w
+     WHERE (w.status = 'pending' OR (w.status = 'failed' AND COALESCE(w.next_attempt_at, 0) <= ?))
+       AND NOT EXISTS (
+         SELECT 1 FROM durable_jobs j
+         WHERE j.type = 'webhook_event'
+           AND json_extract(j.payload_json, '$.eventId') = w.id
+           AND j.status IN ('pending','queued','retrying','processing')
+       )
+     ORDER BY w.received_at ASC LIMIT ?`,
+  ).bind(unixNow(), Math.max(1, Math.min(100, limit))).all<{ id: string }>();
+  for (const row of rows.results ?? []) await ensureWebhookEventJob(env, row.id);
+  return rows.results?.length ?? 0;
+}
+
 export async function claimJob(db: D1Database, jobId: string): Promise<DurableJobRow | null> {
   const timestamp = unixNow();
   const result = await db.prepare(

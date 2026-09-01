@@ -390,7 +390,7 @@ export class AutomationExecutor {
     const run = await this.env.DB.prepare("SELECT * FROM automation_runs WHERE id = ?").bind(runId).first<RunRow>();
     if (!run || run.status !== "waiting") return;
     const wait = await this.env.DB.prepare(
-      "SELECT id, node_id, resume_after FROM automation_wait_states WHERE run_id = ? AND resumed_at IS NULL",
+      "SELECT id, node_id, resume_after FROM automation_wait_states WHERE run_id = ? AND resumed_at IS NULL ORDER BY created_at DESC LIMIT 1",
     ).bind(runId).first<{ id: string; node_id: string; resume_after: number | null }>();
     if (!wait || (wait.resume_after ?? 0) > unixNow()) return;
     const definition = await this.definitionForRun(run);
@@ -414,7 +414,7 @@ export class AutomationExecutor {
     ).bind(trigger.conversationId).first<RunRow>();
     if (!row) return null;
     const definition = await this.definitionForRun(row);
-    const wait = await this.env.DB.prepare("SELECT id, node_id, expected_json FROM automation_wait_states WHERE run_id = ? AND resumed_at IS NULL")
+    const wait = await this.env.DB.prepare("SELECT id, node_id, expected_json FROM automation_wait_states WHERE run_id = ? AND resumed_at IS NULL ORDER BY created_at DESC LIMIT 1")
       .bind(row.id).first<{ id: string; node_id: string; expected_json: string | null }>();
     if (!wait) return null;
     const node = definition.nodes.find((item) => item.id === wait.node_id);
