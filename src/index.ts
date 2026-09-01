@@ -7,7 +7,7 @@ import { claimPollSlot } from "./db";
 import { dueEmailIds, processEmailQueueItem } from "./email/queue";
 import { pollComments } from "./poller/commentPoll";
 import { pollMessages } from "./poller/messagePoll";
-import { dueJobIds, enqueueJob, reconcilePendingWebhookJobs, type QueueJob } from "./queue/jobs";
+import { dueJobIds, enqueueJob, reconcilePendingWebhookJobs, requeueStaleJobs, type QueueJob } from "./queue/jobs";
 import { platformApi } from "./routes/platform-api";
 import { handleAuthorize, handleCallback } from "./routes/auth";
 import { handleWebhookEvent, handleWebhookVerify } from "./routes/webhook";
@@ -76,6 +76,7 @@ const handler = {
 export default handler;
 
 async function processDueWork(env: Env): Promise<void> {
+  await requeueStaleJobs(env.DB);
   await reconcilePendingWebhookJobs(env, 25);
   const [jobs, emails] = await Promise.all([dueJobIds(env.DB, 25), dueEmailIds(env.DB, 25)]);
   for (const job of jobs) await processDurableJob(env, job.id);

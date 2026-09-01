@@ -79,6 +79,18 @@ export async function reconcilePendingWebhookJobs(env: Env, limit = 25): Promise
   return rows.results?.length ?? 0;
 }
 
+/** Return jobs abandoned by a terminated Worker invocation to the retry queue. */
+export async function requeueStaleJobs(db: D1Database, staleAfterSeconds = 300): Promise<number> {
+  const timestamp = unixNow();
+  const result = await db.prepare(
+    `UPDATE durable_jobs
+     SET status = 'retrying', available_at = ?, claimed_at = NULL,
+         last_error = COALESCE(last_error, 'Recovered after interrupted processing'), updated_at = ?
+     WHERE status = 'processing' AND claimed_at IS NOT NULL AND claimed_at <= ?`,
+  ).bind(timestamp, timestamp, timestamp - Math.max(60, staleAfterSeconds)).run();
+  return result.meta.changes ?? 0;
+}
+
 export async function claimJob(db: D1Database, jobId: string): Promise<DurableJobRow | null> {
   const timestamp = unixNow();
   const result = await db.prepare(

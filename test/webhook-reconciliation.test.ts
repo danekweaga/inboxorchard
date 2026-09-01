@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { starterDefinition } from "../src/automation/schema";
 import { saveAutomationDraft } from "../src/automation/repository";
-import { reconcilePendingWebhookJobs } from "../src/queue/jobs";
+import { reconcilePendingWebhookJobs, requeueStaleJobs } from "../src/queue/jobs";
 import type { Env } from "../src/types";
 import { makeTestDb } from "./helpers/fakeD1";
 
@@ -45,5 +45,18 @@ describe("webhook and journey recovery", () => {
 
     const rows = await db.prepare("SELECT id FROM automation_wait_states WHERE run_id = 'run_waits'").all();
     expect(rows.results).toHaveLength(2);
+  });
+
+  it("returns an abandoned processing job to the retry queue", async () => {
+    const db = makeTestDb();
+    await db.prepare(
+      `INSERT INTO durable_jobs
+        (id, type, payload_json, status, priority, attempt_count, available_at, claimed_at, created_at, updated_at)
+       VALUES ('job_stale', 'automation_resume', '{}', 'processing', 10, 1, 1, 1, 1, 1)`,
+    ).run();
+
+    expect(await requeueStaleJobs(db, 60)).toBe(1);
+    expect(await db.prepare("SELECT status, claimed_at FROM durable_jobs WHERE id = 'job_stale'").first())
+      .toMatchObject({ status: "retrying", claimed_at: null });
   });
 });
