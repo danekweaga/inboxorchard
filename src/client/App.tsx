@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, t
 import type { AutomationDefinition, AutomationNode, AutomationNodeType, TriggerType } from "../automation/schema";
 import { nodeTypes, triggerTypes } from "../automation/schema";
 import { api, ApiError, post, put, remove } from "./api";
+import { applyAiCampaignPackage, buildFullCampaignPrompt, parseAiCampaignPackage } from "./ai-campaign-import";
 import { composeGuidedJourney, createGuidedJourney, isGuidedJourney, JOURNEY_IDS, repairGuidedJourneyButtons, type GuidedJourney, type JourneyToggles } from "./guided-journey";
 import { arrangeAutomationNodes, compactLinearAutomation } from "./flow-layout";
 import { buildAiListPrompt, parseSmartList } from "./smart-paste";
@@ -375,6 +376,7 @@ function FlowBuilder({ initial, automationId: initialId, onClose, notify }: { in
   const [configText, setConfigText] = useState(() => JSON.stringify(initial.nodes[0]?.config ?? {}, null, 2));
   const [issues, setIssues] = useState<Array<{ level: string; message: string }>>([]);
   const [busy, setBusy] = useState(false);
+  const [aiImportText, setAiImportText] = useState("");
   const [builderMode, setBuilderMode] = useState<"simple" | "advanced">(() => window.matchMedia("(max-width: 680px)").matches ? "simple" : "advanced");
   const selected = nodes.find((node) => node.id === selectedId);
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => setNodes((current) => applyNodeChanges(changes, current)), []);
@@ -408,12 +410,29 @@ function FlowBuilder({ initial, automationId: initialId, onClose, notify }: { in
     setNodes((current) => current.map((item) => item.id === nodeId ? { ...item, data: { automation: { ...item.data.automation, ...updates } } } : item));
     if (nodeId === selectedId && updates.config) setConfigText(JSON.stringify(updates.config, null, 2));
   };
+  const importAiCampaign = (value = aiImportText) => {
+    try {
+      const campaign = parseAiCampaignPackage(value);
+      const result = applyAiCampaignPackage(definition, nodes.map((item) => ({ ...item.data.automation, position: item.position })), campaign);
+      setDefinition(result.definition);
+      setNodes(result.journey.nodes.map(flowNode));
+      setEdges(result.journey.edges.map(flowEdge));
+      setSelectedId(JOURNEY_IDS.opening);
+      setConfigText(JSON.stringify(result.journey.nodes.find((node) => node.id === JOURNEY_IDS.opening)?.config ?? {}, null, 2));
+      setIssues([]);
+      setAiImportText("");
+      notify("Campaign filled from the AI answer — choose the post or Story, review, then publish");
+    } catch (error) {
+      notify(errorMessage(error), "error");
+    }
+  };
   const arrangeCompactly = () => {
     const arranged = arrangeAutomationNodes(nodes.map((item) => ({ ...item.data.automation, position: item.position })));
     setNodes(arranged.map(flowNode));
     notify("Nodes arranged compactly — drag any step to personalize the layout");
   };
   const conversationTrigger = ["instagram_comment", "instagram_dm", "keyword", "story_reply", "story_mention"].includes(definition.trigger.type);
+  const fullCampaignPrompt = buildFullCampaignPrompt(definition.trigger.type);
   return <div className="builder-page">
     <div className="builder-top"><button className="ghost" onClick={onClose}><ArrowRight className="flip" size={16} /> Automations</button><input className="builder-name" value={definition.name} onChange={(event) => setDefinition((current) => ({ ...current, name: event.target.value }))} aria-label="Campaign name" placeholder="Name this automation campaign" /><div><button className="secondary mode-toggle" onClick={() => setBuilderMode((current) => current === "simple" ? "advanced" : "simple")}>{builderMode === "simple" ? <GitBranch size={16} /> : <Sparkles size={16} />} {builderMode === "simple" ? "Visual builder" : "Simple setup"}</button><button className="secondary" onClick={() => void saveAsTemplate()}><BookOpen size={16} /> Save as template</button><button className="secondary" onClick={() => void validate()}><ShieldCheck size={16} /> Validate</button><button className="secondary" onClick={() => void save()} disabled={busy}><Save size={16} /> Save draft</button><button className="primary" onClick={() => void publish()} disabled={busy}><Zap size={16} /> Publish</button></div></div>
     <div className={`builder-body ${builderMode === "simple" ? "simple-mode" : "advanced-mode"}`}>
@@ -423,6 +442,7 @@ function FlowBuilder({ initial, automationId: initialId, onClose, notify }: { in
         <section className="config-section campaign-details"><h3>Campaign details</h3><label>Campaign name<input value={definition.name} onChange={(event) => setDefinition((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Toolkit comment campaign" /></label><small className="field-help">This name appears in My automations, analytics, and campaign selectors.</small><label>When the same person triggers it again<select value={definition.settings.reentry ?? "once"} onChange={(event) => setDefinition((current) => ({ ...current, settings: { ...current.settings, reentry: event.target.value as "once" | "after_24h" | "every_time" } }))}><option value="once">Only once (recommended)</option><option value="after_24h">Allow again after 24 hours</option><option value="every_time">Every time</option></select></label><small className="field-help">“Only once” prevents repeat comments and button taps from spamming the same person. Failed attempts can retry after five minutes.</small>{automationId && <button className="danger-link" type="button" onClick={() => void deleteCurrent()}><Trash2 size={15} /> Delete this campaign</button>}</section>
         <hr />
         <section className="config-section"><h3>1. When this happens</h3><label>Instagram trigger<select value={definition.trigger.type} onChange={(event) => setDefinition((current) => ({ ...current, trigger: { type: event.target.value as TriggerType, config: defaultTriggerConfig(event.target.value as TriggerType) } }))}>{triggerTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><TriggerConfigFields trigger={definition.trigger} notify={notify} onChange={(config) => setDefinition((current) => ({ ...current, trigger: { ...current.trigger, config } }))} /></section>
+        {conversationTrigger && <><hr /><section className="config-section ai-campaign-autofill"><div className="ai-autofill-heading"><div><span className="eyebrow dark">ONE-PASTE SETUP</span><h3>Let AI write the whole campaign</h3></div><Sparkles size={18} /></div><p>Copy one master prompt into ChatGPT or any AI. After it asks about your offer, paste its final JSON here and every campaign field is filled automatically.</p><div className="ai-import-actions"><AiPromptButton prompt={fullCampaignPrompt} /><details className="ai-prompt-preview"><summary>Preview prompt</summary><pre>{fullCampaignPrompt}</pre></details></div><label>Paste the AI’s final answer<textarea className="ai-campaign-paste" value={aiImportText} onChange={(event) => setAiImportText(event.target.value)} onPaste={(event) => { const pasted = event.clipboardData.getData("text"); if (!pasted.trim().includes("{")) return; event.preventDefault(); setAiImportText(pasted); importAiCampaign(pasted); }} placeholder={'Paste the complete { "schemaVersion": 1, ... } answer here'} spellCheck={false} /></label><button type="button" className="primary full" disabled={!aiImportText.trim()} onClick={() => importAiCampaign()}><Upload size={15} /> Fill every campaign field</button><small>After importing, you only need to select the actual post or Story and review the messages before publishing.</small></section></>}
         {conversationTrigger && <><hr /><section className="config-section"><h3>2. DM journey</h3><GuidedDmJourney triggerType={definition.trigger.type} nodes={nodes.map((item) => item.data.automation)} notify={notify} onApply={applyGuidedJourney} onUpdateNode={updateJourneyNode} /></section></>}
         {builderMode === "advanced" && <><hr />{selected ? <section className="config-section"><h3>{conversationTrigger ? "3" : "2"}. Configure selected step</h3><label>Step name<input value={selected.data.automation.label} onChange={(event) => updateSelected({ label: event.target.value })} /></label><label>What this step does<select value={selected.data.automation.type} onChange={(event) => { const type = event.target.value as AutomationNodeType; const config = defaultNodeConfig(type); updateSelected({ type, config }); setConfigText(JSON.stringify(config, null, 2)); }}>{nodeTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}</select></label><NodeConfigFields node={selected.data.automation} notify={notify} onChange={updateSelectedConfig} /><details className="advanced-config"><summary><Braces size={14} /> Advanced JSON</summary><label>Configuration JSON<textarea className="code-input short" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} /></label><button className="secondary full" onClick={applyConfig}>Apply advanced configuration</button></details><button className="danger-link" onClick={() => { setNodes((current) => current.filter((node) => node.id !== selectedId)); setEdges((current) => current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(null); }}><Trash2 size={15} /> Delete step</button></section> : <EmptyState icon={MousePointerClick} title="Select a step" text="Click a step on the canvas to edit its message, resource, or action." />}<hr /><label>Journey starts with<select value={definition.startNodeId} onChange={(event) => setDefinition((current) => ({ ...current, startNodeId: event.target.value }))}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.data.automation.label}</option>)}</select></label></>}
       </aside>

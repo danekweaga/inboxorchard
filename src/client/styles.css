@@ -182,3 +182,17 @@ form .primary, form .secondary { margin-top: 3px; }
 .content-campaign-row > div:first-child > strong { grid-row: 1 / span 2; grid-column: 1; margin-top: 13px; color: #30384b; font-size: 11px; }
 .content-campaign-row > div:first-child > small { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--muted); font-size: 8px; }
 .content-campaign-row .live-campaign-actions { margin-top: 10px; }
+
+/* One-paste AI campaign setup. */
+.ai-campaign-autofill { padding: 15px; background: linear-gradient(145deg, #f5f2ff, #fbfaff 60%, #f1f8ff); border: 1px solid #ddd6ff; border-radius: 11px; }
+.ai-autofill-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ai-autofill-heading h3 { margin: 5px 0 0; color: #262044; font-size: 13px; }
+.ai-autofill-heading > svg { flex: 0 0 auto; color: #6b58d6; }
+.ai-campaign-autofill > p { margin: 9px 0 13px; color: #646b7c; font-size: 9px; line-height: 1.55; }
+.ai-campaign-autofill > small { display: block; margin-top: 9px; color: #777f91; font-size: 8px; line-height: 1.45; }
+.ai-import-actions { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.ai-prompt-preview { min-width: 0; color: #6759c8; font-size: 8px; font-weight: 800; }
+.ai-prompt-preview summary { cursor: pointer; }
+.ai-prompt-preview[open] { width: 100%; }
+.ai-prompt-preview pre { max-height: 220px; overflow: auto; margin: 8px 0 2px; padding: 10px; color: #50586a; background: #fff; border: 1px solid #dddfea; border-radius: 7px; font: 7px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 500; white-space: pre-wrap; }
+.ai-campaign-paste { min-height: 100px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 8px; }
