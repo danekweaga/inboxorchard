@@ -15,7 +15,7 @@ import { clearAuth, getAuth, kvSet, now } from "../db";
 import { queueEmail } from "../email/queue";
 import { INSTAGRAM_CAPABILITIES } from "../providers/capabilities";
 import { WorkersAIProvider } from "../providers/ai";
-import { BrevoProvider } from "../providers/email";
+import { BrevoProvider, ResendProvider } from "../providers/email";
 import { createLinkResource, uploadResource } from "../providers/storage";
 import { enqueueJob } from "../queue/jobs";
 import { sealSecret, timingSafeEqual } from "../security/crypto";
@@ -502,7 +502,7 @@ platformApi.delete("/resources/:id", async (context) => {
 
 platformApi.get("/email", async (context) => {
   const [senders, templates, queue, sequences] = await Promise.all([
-    context.env.DB.prepare("SELECT id, provider, email, display_name, purpose, status, safety_limit, sent_in_window, last_error, updated_at FROM email_senders ORDER BY created_at").all(),
+    context.env.DB.prepare("SELECT id, provider, email, display_name, purpose, status, safety_limit, sent_in_window, monthly_limit, sent_month_start, sent_in_month, last_error, updated_at FROM email_senders ORDER BY created_at").all(),
     context.env.DB.prepare("SELECT * FROM email_templates ORDER BY updated_at DESC").all(),
     context.env.DB.prepare("SELECT * FROM email_queue ORDER BY created_at DESC LIMIT 100").all(),
     context.env.DB.prepare(
@@ -545,7 +545,7 @@ platformApi.post("/email/templates", async (context) => {
 });
 
 platformApi.post("/email/queue", async (context) => {
-  const parsed = z.object({ senderId: z.string().optional(), recipient: z.string().email(), templateId: z.string().min(1), variables: z.record(z.string(), z.unknown()).optional() })
+  const parsed = z.object({ senderId: z.string().optional(), recipient: z.string().email(), templateId: z.string().min(1), variables: z.record(z.string(), z.unknown()).optional(), allowFallback: z.boolean().optional() })
     .safeParse(await safeJson(context.req.raw));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid queued email", 400);
   const queueId = await queueEmail(context.env.DB, parsed.data);
@@ -566,6 +566,41 @@ platformApi.post("/email/brevo", async (context) => {
       (id, provider, email, display_name, purpose, status, credentials_ciphertext, safety_limit, created_at, updated_at)
      VALUES (?, 'brevo', ?, ?, ?, 'connected', ?, ?, ?, ?)`,
   ).bind(senderId, parsed.data.email, parsed.data.displayName ?? null, parsed.data.purpose ?? null, await sealSecret(JSON.stringify({ apiKey: parsed.data.apiKey }), context.env.ENCRYPTION_KEY), parsed.data.safetyLimit, unixNow(), unixNow()).run();
+  return context.json({ id: senderId }, 201);
+});
+
+platformApi.post("/email/resend", async (context) => {
+  const parsed = z.object({
+    apiKey: z.string().trim().min(12).startsWith("re_"),
+    email: z.string().email(),
+    displayName: z.string().trim().max(120).optional(),
+    purpose: z.string().trim().max(160).optional(),
+    safetyLimit: z.number().int().min(1).max(5_000).default(100),
+    monthlyLimit: z.number().int().min(1).max(1_000_000).default(3_000),
+  }).safeParse(await safeJson(context.req.raw));
+  if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid Resend sender", 400);
+  if (!context.env.ENCRYPTION_KEY) return jsonError("ENCRYPTION_KEY is not configured", 503);
+  const validation = await new ResendProvider(parsed.data.apiKey).validateConnection();
+  if (!validation.ok) return jsonError(validation.detail ?? "Resend connection failed", 400);
+  const senderId = id("sender");
+  const timestamp = unixNow();
+  await context.env.DB.prepare(
+    `INSERT INTO email_senders
+      (id, provider, email, display_name, purpose, status, credentials_ciphertext, safety_limit,
+       monthly_limit, sent_month_start, created_at, updated_at)
+     VALUES (?, 'resend', ?, ?, ?, 'connected', ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    senderId,
+    parsed.data.email,
+    parsed.data.displayName || null,
+    parsed.data.purpose || "Creator follow-up",
+    await sealSecret(JSON.stringify({ apiKey: parsed.data.apiKey }), context.env.ENCRYPTION_KEY),
+    parsed.data.safetyLimit,
+    parsed.data.monthlyLimit,
+    Math.floor(Date.UTC(new Date(timestamp * 1000).getUTCFullYear(), new Date(timestamp * 1000).getUTCMonth(), 1) / 1000),
+    timestamp,
+    timestamp,
+  ).run();
   return context.json({ id: senderId }, 201);
 });
 

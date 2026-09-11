@@ -30,6 +30,7 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;
   BREVO_API_KEY?: string;
+  RESEND_API_KEY?: string;
 
   /** Backwards-compatible secret names from chatmany 0.1. */
   APP_ID?: string;

@@ -4,6 +4,7 @@ export interface EmailSendInput {
   subject: string;
   html: string;
   text?: string;
+  idempotencyKey?: string;
 }
 
 export interface EmailSendResult {
@@ -13,6 +14,23 @@ export interface EmailSendResult {
 export interface EmailProvider {
   send(input: EmailSendInput): Promise<EmailSendResult>;
   validateConnection(): Promise<{ ok: boolean; detail?: string }>;
+}
+
+export type EmailProviderErrorKind = "quota" | "auth" | "rejected" | "retryable" | "unknown";
+
+export class EmailProviderError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly kind: EmailProviderErrorKind,
+  ) {
+    super(message);
+    this.name = "EmailProviderError";
+  }
+
+  get safeToFallback(): boolean {
+    return this.kind === "quota" || this.kind === "auth";
+  }
 }
 
 function base64Url(value: string): string {
@@ -51,7 +69,7 @@ export class GmailProvider implements EmailProvider {
       body: JSON.stringify({ raw: base64Url(raw) }),
     });
     const body = await response.json() as { id?: string; error?: { message?: string } };
-    if (!response.ok || !body.id) throw new Error(body.error?.message ?? `Gmail HTTP ${response.status}`);
+    if (!response.ok || !body.id) throw providerError("Gmail", response.status, body.error?.message);
     return { messageId: body.id };
   }
 
@@ -77,13 +95,44 @@ export class BrevoProvider implements EmailProvider {
       }),
     });
     const body = await response.json() as { messageId?: string; message?: string };
-    if (!response.ok || !body.messageId) throw new Error(body.message ?? `Brevo HTTP ${response.status}`);
+    if (!response.ok || !body.messageId) throw providerError("Brevo", response.status, body.message);
     return { messageId: body.messageId };
   }
 
   async validateConnection(): Promise<{ ok: boolean; detail?: string }> {
     const response = await fetch("https://api.brevo.com/v3/account", { headers: { "api-key": this.apiKey, accept: "application/json" } });
     return { ok: response.ok, detail: response.ok ? undefined : `Brevo HTTP ${response.status}` };
+  }
+}
+
+export class ResendProvider implements EmailProvider {
+  constructor(private readonly apiKey: string) {}
+
+  async send(input: EmailSendInput): Promise<EmailSendResult> {
+    const from = input.from.name ? `${input.from.name} <${input.from.email}>` : input.from.email;
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+        ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
+      },
+      body: JSON.stringify({ from, to: [input.to], subject: input.subject, html: input.html, text: input.text }),
+    });
+    const body = await response.json() as { id?: string; message?: string; name?: string };
+    if (!response.ok || !body.id) throw providerError("Resend", response.status, body.message ?? body.name);
+    return { messageId: body.id };
+  }
+
+  async validateConnection(): Promise<{ ok: boolean; detail?: string }> {
+    if (!this.apiKey.startsWith("re_") || this.apiKey.length < 12) return { ok: false, detail: "Resend API key must start with re_" };
+    const response = await fetch("https://api.resend.com/domains", {
+      headers: { authorization: `Bearer ${this.apiKey}`, accept: "application/json" },
+    });
+    // Sending-only keys intentionally cannot list domains. A 403 still proves that Resend
+    // recognized the key, while a 401 means the credential itself is invalid.
+    if (response.ok || response.status === 403) return { ok: true };
+    return { ok: false, detail: `Resend HTTP ${response.status}` };
   }
 }
 
@@ -94,4 +143,17 @@ export class MockEmailProvider implements EmailProvider {
   async validateConnection(): Promise<{ ok: boolean }> {
     return { ok: true };
   }
+}
+
+function providerError(provider: string, status: number, detail?: string): EmailProviderError {
+  const kind: EmailProviderErrorKind = status === 429
+    ? "quota"
+    : [401, 402, 403].includes(status)
+      ? "auth"
+      : status >= 500
+        ? "retryable"
+        : status >= 400
+          ? "rejected"
+          : "unknown";
+  return new EmailProviderError(detail ?? `${provider} HTTP ${status}`, status, kind);
 }

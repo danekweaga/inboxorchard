@@ -120,6 +120,13 @@ describe("Instagram content selection", () => {
     expect(triggerMatches(definition, { type: "story_reply", eventId: "two", mediaId: "story_999", text: "Love this" })).toBe(false);
   });
 
+  it("runs a Story automation only when the reply contains a configured keyword", () => {
+    const definition = starterDefinition("Story keyword");
+    definition.trigger = { type: "story_reply", config: { mediaIds: ["story_123"], match: { mode: "contains_any", include: ["guide", "toolkit"], exclude: [], caseSensitive: false } } };
+    expect(triggerMatches(definition, { type: "story_reply", eventId: "one", mediaId: "story_123", text: "Can I get the GUIDE?" })).toBe(true);
+    expect(triggerMatches(definition, { type: "story_reply", eventId: "two", mediaId: "story_123", text: "Love this" })).toBe(false);
+  });
+
   it("accepts public reply variations without a duplicate text field", () => {
     const definition = starterDefinition("Reply variations");
     definition.trigger = { type: "instagram_comment", config: {} };

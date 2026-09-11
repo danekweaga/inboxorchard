@@ -26,7 +26,7 @@ This is the main reason Instagram automation can feel harder than it did previou
 
 Quick replies, buttons, media, icebreakers, Story-related events, referrals, reactions, reads/delivery events, and template/card behavior can vary by API surface and access level. A ManyChat feature is not proof that the same feature is exposed to every independent Meta app. Inbox Orchard only enables a provider action when the official channel adapter and capability matrix support it.
 
-Story reply/mention triggers are marked access-dependent. Unsupported fields remain visible as limitations rather than being simulated in production. Mock mode exists only for development and is clearly identified.
+Story reply/mention triggers are marked access-dependent. Story reply automations can filter the inbound reply by one or more keywords, but only when Meta delivers the Story reply event and its text. Unsupported fields remain visible as limitations rather than being simulated in production. Mock mode exists only for development and is clearly identified.
 
 ## Meta review and test behavior
 
@@ -39,9 +39,9 @@ Real verification needs two accounts: the connected Professional account and an 
 - Gmail/provider quota is authoritative in the provider dashboard. Inbox Orchard's sender safety threshold is deliberately conservative and locally tracked; it is not a claim about Google's exact remaining quota.
 - At the safety threshold or on retryable failure, queued email is retained and rescheduled. It is not silently dropped.
 
-## Brevo and Google Sheets
+## Resend, Brevo, and Google Sheets
 
-Brevo requires the owner's API key and a provider-verified sender. Google Sheets requires OAuth and edit access to the selected spreadsheet. These services can change free allocations. Provider failure is isolated from Instagram ingestion and deterministic workflow state.
+Resend and Brevo require the owner's API key and a provider-verified sender or domain. Google Sheets requires OAuth and edit access to the selected spreadsheet. These services can change free allocations. Inbox Orchard tracks configured local limits but the provider dashboard remains authoritative. Automatic email failover is restricted to definite quota or authorization responses; ambiguous delivery failures retry safely instead of risking duplicates. Provider failure is isolated from Instagram ingestion and deterministic workflow state.
 
 ## Cloudflare free allocations
 

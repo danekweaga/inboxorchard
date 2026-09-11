@@ -64,6 +64,15 @@ describe("one-paste AI campaign setup", () => {
     expect(result.journey.nodes.find((node) => node.id === JOURNEY_IDS.thanks)?.config.text).toBe(packageJson.thankYouMessage);
   });
 
+  it("fills Story reply keywords from the same one-paste AI package", () => {
+    const initial = starterDefinition("Story resource");
+    initial.trigger = { type: "story_reply", config: { mediaIds: ["story_123"] } };
+    const result = applyAiCampaignPackage(initial, initial.nodes, packageJson);
+    expect(result.definition.trigger.config.mediaIds).toEqual(["story_123"]);
+    expect((result.definition.trigger.config.match as { include: string[] }).include).toEqual(["TOOLKIT", "creator kit"]);
+    expect(buildFullCampaignPrompt("story_reply")).toContain('"keywords": [');
+  });
+
   it("removes optional stages when the AI package disables them", () => {
     const initial = starterDefinition();
     const result = applyAiCampaignPackage(initial, initial.nodes, {

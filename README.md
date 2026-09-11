@@ -4,7 +4,7 @@ Inbox Orchard is an Instagram-first, self-hosted conversation automation platfor
 
 It uses official Meta APIs only. There is no central Inbox Orchard service: each installation owns its Cloudflare account, credentials, database, queue, files, and provider accounts.
 
-> Status: the core application, mock mode, workflow engine, inbox, CRM, resources, email queue, integrations, analytics, and administration UI are implemented. Real Meta, Gmail, Brevo, Google Sheets, and remote Cloudflare behavior must be verified with the deployer's own credentials. See [Platform limitations](docs/platform-limitations.md) before publishing an automation.
+> Status: the core application, mock mode, workflow engine, inbox, CRM, resources, email queue, integrations, analytics, and administration UI are implemented. Real Meta, Resend, Gmail, Brevo, Google Sheets, and remote Cloudflare behavior must be verified with the deployer's own credentials. See [Platform limitations](docs/platform-limitations.md) before publishing an automation.
 
 ## What works
 
@@ -14,10 +14,10 @@ It uses official Meta APIs only. There is no central Inbox Orchard service: each
 - Inbox, contacts, tags, typed custom fields, timelines, source attribution, messaging-window status, and manual actions
 - Versioned structured automations with deterministic trigger priority and duplicate-run protection
 - Real pause/resume state for questions, delayed work, and waiting runs
-- Keyword, comment, Story access-dependent, AI intent, webhook, schedule, tag, field, manual, and sequence triggers
+- Keyword, comment, keyword-filtered Story reply, Story mention, AI intent, webhook, schedule, tag, field, manual, and sequence triggers
 - React Flow editor, validation, immutable publishing, run logs, natural-language proposal, and no-send simulator
 - R2-backed uploads, link resources, tracked redirects, clicks, and conversion events
-- Queue-first Gmail, Brevo, or mock email delivery with daily safety thresholds, retry, and sequences
+- Queue-first Resend, Brevo, Gmail, or mock email delivery with daily/monthly safety thresholds, safe failover, retry, and sequences
 - Optional Workers AI intent classification, grounded replies, and workflow generation
 - Google Sheets append actions and signed custom inbound webhooks
 - Real database-backed dashboard/content analytics, CSV export, JSON automation export/import, and secret-free backup/restore
@@ -43,7 +43,7 @@ See [Architecture](docs/architecture.md) for component boundaries, data flow, an
 - Node.js 22 or newer
 - A Cloudflare account with Workers, D1, Queues, and R2 available
 - For live Instagram: a Professional Instagram account and a Meta developer app configured for Instagram messaging
-- Optional: Google OAuth credentials for Gmail/Sheets and/or a Brevo API key
+- Optional: a Resend or Brevo API key and/or Google OAuth credentials for Gmail/Sheets
 
 The default architecture has no mandatory paid service and no mandatory custom domain. Provider free allocations and policies can change; check each provider dashboard before deploying.
 
@@ -149,6 +149,15 @@ The send API generally requires the recipient to have contacted the professional
 
 Refresh tokens are encrypted server-side. Gmail delivery uses a conservative per-sender threshold; messages remain queued when the threshold is reached. Google may require consent-screen configuration or verification depending on who uses the OAuth app.
 
+## Resend
+
+1. Verify a sending domain in Resend.
+2. Create a Sending access API key restricted to that domain.
+3. Open Inbox Orchard → Integrations → Resend and enter the API key plus an address on the verified domain.
+4. Keep the displayed daily and monthly limits aligned with the limits shown in your Resend account.
+
+Resend is the default primary sender when connected. You can also connect Brevo and Gmail as fallbacks. Inbox Orchard only switches providers after a definite quota or authorization rejection; uncertain network failures retry with the same idempotency key so a message is not duplicated across providers.
+
 ## Brevo
 
 Set `BREVO_API_KEY` as a Worker secret or enter a key from Inbox Orchard → Integrations with a verified sender address. The key is validated before the encrypted sender record is saved. Queue state and failures remain visible under Email.
@@ -173,7 +182,7 @@ The legacy `chatmany` tables remain as a compatibility path. New product domains
 - Contacts and analytics can be downloaded as CSV.
 - Each automation can be exported as normal schema-v1 JSON and imported through the automation API/UI workflow.
 - Backup exports include configuration, immutable versions, resource metadata, email templates/sequences, AI configuration, and settings.
-- Backup exports deliberately exclude Meta/Google/Brevo tokens and encrypted provider credentials.
+- Backup exports deliberately exclude Meta/Google/Resend/Brevo tokens and encrypted provider credentials.
 - Restore validates the schema, limits the number of rows, and merges only whitelisted configuration tables.
 - R2 file bytes are not embedded in JSON backups; copy the bucket separately when migrating uploaded files.
 

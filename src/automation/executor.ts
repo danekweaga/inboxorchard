@@ -325,6 +325,7 @@ export class AutomationExecutor {
           recipient,
           templateId: String(node.config.templateId ?? ""),
           variables: { ...context.variables, instagram_username: contact.username, first_name: contact.display_name },
+          allowFallback: node.config.allowFallback !== false,
         });
         await enqueueJob(this.env, "email_send", { queueId }, { priority: 70 });
         return { output: { queueId } };

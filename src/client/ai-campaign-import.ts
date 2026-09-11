@@ -39,7 +39,7 @@ const triggerLabels: Partial<Record<TriggerType, string>> = {
 /** Build a provider-neutral prompt whose final answer can be imported without field-by-field copying. */
 export function buildFullCampaignPrompt(triggerType: TriggerType): string {
   const trigger = triggerLabels[triggerType] ?? "an Instagram conversation";
-  const needsKeywords = ["instagram_comment", "instagram_dm", "keyword"].includes(triggerType);
+  const needsKeywords = ["instagram_comment", "instagram_dm", "keyword", "story_reply"].includes(triggerType);
   const needsPublicReplies = triggerType === "instagram_comment";
   return [
     "You are helping me write one complete Instagram automation for Inbox Orchard.",
@@ -183,7 +183,7 @@ export function applyAiCampaignPackage(
   });
 
   const triggerConfig = { ...definition.trigger.config };
-  if (["instagram_comment", "instagram_dm", "keyword"].includes(triggerType) && campaign.keywords.length) {
+  if (["instagram_comment", "instagram_dm", "keyword", "story_reply"].includes(triggerType) && campaign.keywords.length) {
     const currentMatch = isRecord(triggerConfig.match) ? triggerConfig.match : {};
     triggerConfig.match = {
       ...currentMatch,

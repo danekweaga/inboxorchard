@@ -33,7 +33,7 @@ The webhook response is acknowledged only after its raw body and idempotency has
 | Async | Cloudflare Queues + cron | Webhooks, email, delays, sequence work, retries, scheduled triggers |
 | Files | Cloudflare R2 | Controlled creator-resource uploads |
 | AI | Workers AI adapter | Optional intent/reply/workflow proposals; never required for keywords |
-| Providers | Instagram, Gmail, Brevo, Sheets, HTTPS adapters | Centralized external request and error/rate-limit handling |
+| Providers | Instagram, Resend, Gmail, Brevo, Sheets, HTTPS adapters | Centralized external request and error/rate-limit handling |
 
 ## Automation model
 
@@ -51,7 +51,7 @@ The executor does not call Meta directly. It requests an action from the Instagr
 
 ## FREE MODE degradation
 
-Core event persistence and deterministic automations do not depend on AI or email availability. AI errors are treated as optional feature failures. Email actions always enter D1 first; missing senders, daily safety limits, and retryable provider failures leave a visible queued/retrying record.
+Core event persistence and deterministic automations do not depend on AI or email availability. AI errors are treated as optional feature failures. Email actions always enter D1 first; missing senders, daily/monthly safety limits, and retryable provider failures leave a visible queued/retrying record. Resend, Brevo, and Gmail can fail over only after a definite quota or authorization rejection; ambiguous failures retain the same provider and idempotency key to avoid duplicate delivery.
 
 ## Security boundaries
 

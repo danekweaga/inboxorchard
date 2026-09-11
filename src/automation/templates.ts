@@ -86,10 +86,11 @@ export const AUTOMATION_TEMPLATES: Array<{ id: string; category: string; definit
   {
     id: "story-reply",
     category: "Instagram",
-    definition: { ...linearTemplate("Story Reply", "Respond to a reply on any active Story or one Story you select.", "story_reply", [
-      { id: "thanks", type: "send_text", label: "Send thanks", position: { x: 80, y: 120 }, config: { text: "appreciate you replying 🫡" } },
-      end(380),
-    ]), trigger: { type: "story_reply", config: { mediaIds: [] } } },
+    definition: { ...linearTemplate("Story Keyword to Resource", "Send a resource when someone replies to a selected Story with one of your keywords.", "story_reply", [
+      { id: "opening", type: "send_buttons", label: "Open the conversation", position: { x: 80, y: 120 }, config: { text: "I’ve got it — tap below and I’ll send the resource 👇", buttons: [{ title: "Send it", payload: "OPENING_CONFIRMED" }] } },
+      { id: "delivery", type: "send_text", label: "Deliver resource", position: { x: 380, y: 120 }, config: { text: "Here’s the resource you requested 👇\n\nhttps://example.com/resource" } },
+      end(680),
+    ]), trigger: { type: "story_reply", config: { mediaIds: [], match: { mode: "contains_any", include: ["GUIDE"], exclude: [], caseSensitive: false } } } },
   },
   {
     id: "faq-bot",
