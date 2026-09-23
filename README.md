@@ -6,6 +6,20 @@ It uses official Meta APIs only. There is no central Inbox Orchard service: each
 
 > Status: the core application, mock mode, workflow engine, inbox, CRM, resources, email queue, integrations, analytics, and administration UI are implemented. Real Meta, Resend, Gmail, Brevo, Google Sheets, and remote Cloudflare behavior must be verified with the deployer's own credentials. See [Platform limitations](docs/platform-limitations.md) before publishing an automation.
 
+## Start here (non-technical guide)
+
+Inbox Orchard is self-hosted. That means you get your own private copy instead of creating an account on somebody else's service. You do **not** need to know how to program, but you do need a computer and about 30–60 minutes to connect the accounts.
+
+Choose the path that matches your goal:
+
+| I want to… | Use this section |
+| --- | --- |
+| Look around safely without connecting Instagram | [Try it on your computer](#try-it-on-your-computer) |
+| Run real Instagram automations | [Publish your own copy](#publish-your-own-copy) |
+| Help develop the project | [Developer commands](#developer-commands) |
+
+The live Instagram setup cannot be reduced to one click because Meta requires every owner to create and approve their own app. Never share your Meta secret, owner password, or email API key with anyone.
+
 ## What works
 
 - Single-owner dashboard authentication with an HTTP-only signed session
@@ -38,27 +52,201 @@ Browser → Hono Worker → automation engine → policy layer → provider adap
 
 See [Architecture](docs/architecture.md) for component boundaries, data flow, and reliability behavior.
 
-## Requirements
+## What you need
 
-- Node.js 22 or newer
-- A Cloudflare account with Workers, D1, Queues, and R2 available
-- For live Instagram: a Professional Instagram account and a Meta developer app configured for Instagram messaging
-- Optional: a Resend or Brevo API key and/or Google OAuth credentials for Gmail/Sheets
+- A Windows, macOS, or Linux computer (setup cannot be completed only on a phone)
+- [Node.js 22 or newer](https://nodejs.org/en/download)
+- A free [Cloudflare account](https://dash.cloudflare.com/sign-up) for a live deployment
+- For real Instagram messages: an Instagram Professional account and a [Meta developer account](https://developers.facebook.com/)
+- Optional for email: a Resend, Gmail, or Brevo account
 
 The default architecture has no mandatory paid service and no mandatory custom domain. Provider free allocations and policies can change; check each provider dashboard before deploying.
 
-## Local development
+## Try it on your computer
+
+This safe demo does not contact Instagram or send real messages.
+
+### 1. Download the project
+
+On this GitHub page, click **Code → Download ZIP**, unzip it, and open the `inboxorchard` folder. You can also use GitHub Desktop or Git if you already have either one.
+
+### 2. Open a terminal in the folder
+
+- **Windows:** open the folder in File Explorer, click the address bar, type `powershell`, and press Enter.
+- **macOS:** Control-click the folder in Finder and choose **New Terminal at Folder**.
+
+### 3. Install it
 
 ```bash
 npm install
-copy .env.example .dev.vars
+```
+
+Wait until the command finishes. Warnings are usually fine; stop only if the terminal says the installation failed.
+
+### 4. Create the private settings file
+
+On Windows:
+
+```powershell
+Copy-Item .env.example .dev.vars
+notepad .dev.vars
+```
+
+On macOS or Linux:
+
+```bash
+cp .env.example .dev.vars
+```
+
+Open `.dev.vars` in a text editor. Replace the three placeholder values below with three different long phrases that only you know:
+
+```text
+OWNER_TOKEN=your-private-dashboard-password
+SESSION_SECRET=a-different-long-random-phrase
+ENCRYPTION_KEY=another-different-long-random-phrase
+```
+
+Add this line at the bottom so the local copy stays in safe demo mode:
+
+```text
+MOCK_MODE=true
+```
+
+Save the file. `.dev.vars` is ignored by Git; never post or upload it.
+
+### 5. Start the demo
+
+Run these commands one at a time:
+
+```bash
 npm run db:migrate:local
 npm run dev
 ```
 
-On macOS/Linux, replace `copy` with `cp`. Set strong local values for `OWNER_TOKEN`, `SESSION_SECRET`, and `ENCRYPTION_KEY` in `.dev.vars`. Keep `MOCK_MODE=true` while developing without real Instagram credentials.
+Open `http://127.0.0.1:5173` in your browser. Sign in with the value you put after `OWNER_TOKEN=`. Use the Simulator to test workflows without sending anything.
 
-Open `http://127.0.0.1:5173`, enter the `OWNER_TOKEN`, and use Simulator or the mock-event controls. Optional demo records are never seeded automatically:
+To stop the app, return to the terminal and press **Ctrl+C**. The next time you want to use it, open a terminal in the folder and run `npm run dev`.
+
+## Publish your own copy
+
+Cloudflare hosts both the dashboard and the backend, so Vercel is not required. Complete the local demo first; it confirms that Node.js and the downloaded project work.
+
+### 1. Sign in to Cloudflare
+
+From the project folder, run:
+
+```bash
+npx wrangler login
+```
+
+Your browser will open. Approve the connection, then return to the terminal.
+
+### 2. Create the storage and message queues
+
+Run each command separately:
+
+```bash
+npx wrangler d1 create chatmany
+npx wrangler queues create dmflow-tasks
+npx wrangler queues create dmflow-dead-letter
+```
+
+The first command prints a `database_id`. Copy that ID.
+
+Optional: if you want users to upload files directly instead of only sharing links, also run:
+
+```bash
+npx wrangler r2 bucket create dmflow-resources
+```
+
+Then uncomment the `r2_buckets` section in `wrangler.jsonc`.
+
+### 3. Point the project at your Cloudflare account
+
+Open `wrangler.jsonc` in a text editor.
+
+1. Replace the existing `database_id` with the ID Cloudflare just gave you.
+2. Change the first `name` value from `chatmany` to a unique Worker name, such as `yourname-inbox-orchard`.
+3. Do not rename the bindings `DB`, `TASK_QUEUE`, `RESOURCES`, or `AI`.
+
+Save the file, then create the database tables:
+
+```bash
+npm run db:migrate:remote
+```
+
+### 4. Add private security values
+
+Run each command below. Wrangler will ask you to paste a value; the terminal may hide what you type. Use a different long random value for every item.
+
+```bash
+npx wrangler secret put OWNER_TOKEN
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put ENCRYPTION_KEY
+npx wrangler secret put META_APP_ID
+npx wrangler secret put META_APP_SECRET
+npx wrangler secret put META_VERIFY_TOKEN
+```
+
+- `OWNER_TOKEN` is the password you will use to open your dashboard.
+- `META_APP_ID` and `META_APP_SECRET` come from your Meta app's Instagram API setup page.
+- `META_VERIFY_TOKEN` is a random phrase you create and later enter in Meta's webhook form.
+
+### 5. Deploy once and copy your address
+
+```bash
+npm run deploy
+```
+
+At the end, Cloudflare prints an address similar to `https://yourname-inbox-orchard.workers.dev`. Copy it.
+
+Open `wrangler.jsonc` again and replace the old `chatmany.danekweaga.workers.dev` address everywhere with your new Worker address. For the simplest Cloudflare-only installation, also set `PUBLIC_APP_ORIGIN` to that same address. Save the file and deploy again:
+
+```bash
+npm run deploy
+```
+
+Your private copy is now online. Open the Worker address and sign in with your `OWNER_TOKEN`.
+
+### 6. Connect Instagram
+
+1. In [Meta for Developers](https://developers.facebook.com/apps/), create an app with the Instagram messaging/content use case.
+2. Add your Instagram Professional account as a tester while the app is in development mode.
+3. Set the OAuth redirect URL to `https://YOUR-WORKER.workers.dev/auth/callback`.
+4. Set the webhook callback URL to `https://YOUR-WORKER.workers.dev/webhook`.
+5. Enter the same random phrase you used for `META_VERIFY_TOKEN` as the webhook verification token.
+6. Enable the Instagram permissions and webhook fields required by the automations you plan to use.
+7. Open your Inbox Orchard dashboard, go to **Integrations → Instagram**, and connect the account.
+
+Meta controls which permissions and messaging windows are available. Test with accounts that have a role on the Meta app before requesting Live mode or App Review.
+
+### 7. Optional email setup
+
+You only need one email provider to start. The easiest option is Resend:
+
+1. Create a Resend account and verify a sending domain.
+2. Create a sending-only API key.
+3. In Inbox Orchard, open **Integrations → Resend**.
+4. Paste the key and add an address from your verified domain.
+5. Send a test email before publishing an email automation.
+
+Gmail and Brevo instructions are farther down this README.
+
+### Updating later
+
+Download the newest release or pull the newest GitHub version, then run:
+
+```bash
+npm install
+npm run db:migrate:remote
+npm run deploy
+```
+
+Back up your data first. Do not replace `.dev.vars`, and do not copy another person's secrets or database ID.
+
+## Developer commands
+
+Optional demo records are never seeded automatically:
 
 ```bash
 npm run db:seed:demo
@@ -76,38 +264,7 @@ node scripts/smoke.mjs
 
 The smoke script expects the local server on port 5173, owner token `dev-owner-token-change-me`, mock mode, and the local Meta test secret from the example configuration. Override those with `DMFLOW_SMOKE_URL`, `DMFLOW_OWNER_TOKEN`, and `DMFLOW_META_APP_SECRET`.
 
-## Cloudflare setup
-
-Authenticate and create the resources in your own account:
-
-```bash
-npx wrangler login
-npx wrangler d1 create chatmany
-npx wrangler r2 bucket create dmflow-resources
-npx wrangler queues create dmflow-tasks
-npx wrangler queues create dmflow-dead-letter
-```
-
-Copy the D1 `database_id` returned by Wrangler into [`wrangler.jsonc`](wrangler.jsonc). Resource names can be changed, but the binding names `DB`, `RESOURCES`, `TASK_QUEUE`, and `AI` must continue to match the code unless you update both sides.
-
-Apply remote migrations:
-
-```bash
-npm run db:migrate:remote
-```
-
-Set secrets. Use different, randomly generated values for the three owner/security secrets:
-
-```bash
-npx wrangler secret put META_APP_ID
-npx wrangler secret put META_APP_SECRET
-npx wrangler secret put META_VERIFY_TOKEN
-npx wrangler secret put OWNER_TOKEN
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put ENCRYPTION_KEY
-```
-
-Optional integrations:
+### Optional production secrets
 
 ```bash
 npx wrangler secret put GOOGLE_CLIENT_ID
@@ -115,17 +272,11 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put BREVO_API_KEY
 ```
 
-Update `REDIRECT_URI`, `GOOGLE_REDIRECT_URI`, and `PUBLIC_BASE_URL` in `wrangler.jsonc` for the final Worker address. Then deploy:
-
-```bash
-npm run deploy
-```
-
 Inbox Orchard never creates or upgrades a paid plan. Cloudflare and provider dashboards remain the source of truth for quota and billing.
 
 ### Optional Vercel frontend
 
-The complete backend must remain on Cloudflare because it uses D1, Queues, cron, R2, and Workers AI bindings. [`vercel.json`](vercel.json) can host the built React client on Vercel and securely reverse-proxy application routes to your Worker. Replace its Worker hostname and set the same Vercel production origin in `PUBLIC_APP_ORIGIN` before deployment. This is a frontend edge only—not a replacement for the Cloudflare backend.
+The complete backend must remain on Cloudflare because it uses D1, Queues, cron, R2, and Workers AI bindings. Cloudflare already serves the full app, so most people should skip Vercel. If you use Vercel, replace every maintainer Worker address in [`vercel.json`](vercel.json) with your Worker address and set `PUBLIC_APP_ORIGIN` in `wrangler.jsonc` to the final Vercel address before redeploying the Worker. Vercel is only a frontend; it does not replace the Cloudflare backend.
 
 ## Meta / Instagram setup
 
