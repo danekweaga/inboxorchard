@@ -7,7 +7,9 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !(init.body instanceof FormData)) headers.set("content-type", "application/json");
-  const response = await fetch(`/api${path}`, { ...init, headers });
+  const account = new URLSearchParams(location.search).get("account");
+  const prefix = account && /^\d+$/.test(account) ? "/api/account/" + account : "";
+  const response = await fetch(`${prefix}/api${path}`, { ...init, headers });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) throw new ApiError(typeof body.error === "string" ? body.error : `Request failed (${response.status})`, response.status);
   return body as T;

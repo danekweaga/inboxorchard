@@ -17,6 +17,9 @@ import { processDueSequences } from "./services/sequences";
 import { ensureInstagramWebhookSubscription } from "./services/webhook-subscription";
 import { refreshInstagramMedia } from "./services/media-sync";
 import type { Env } from "./types";
+import { workspaces } from "./workspaces";
+import { accountPrefix, linkedAccounts, linkedEnv, registered } from "./linked-accounts";
+export { InstagramAccountStorage } from "./account-storage";
 
 type AppEnv = { Bindings: Env };
 
@@ -42,9 +45,46 @@ app.get("/r/:id", handleResourceDownload);
 app.route("/api", platformApi);
 
 const handler = {
-  fetch: app.fetch,
+  async fetch(request: Request, env: Env, context: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/account/")) {
+      const match = /^\/api\/account\/(\d+)(\/(?:api\/|l\/|r\/|hooks\/|auth\/google\/callback).*?)$/.exec(url.pathname);
+      if (!match || !env.IG_ACCOUNTS || env.WORKSPACES || !await registered(env, match[1]!)) return new Response("Unknown workspace", { status: 404 });
+      url.pathname = match[2]!;
+      return app.fetch(new Request(url, request), linkedEnv(env, match[1]!), context);
+    }
+    if (!env.WORKSPACES) return app.fetch(request, env, context);
+    const origin = new URL(request.url).origin;
+    const account = workspaces(env).find(item => item.origins.includes(origin));
+    return account ? app.fetch(request, account.resolve(), context) : new Response("Unknown workspace", { status: 404 });
+  },
 
   async scheduled(event: ScheduledController, env: Env, context: ExecutionContext): Promise<void> {
+    for (const account of workspaces(env)) {
+      context.waitUntil(Promise.resolve().then(() => scheduleAccount(event, account.resolve(), context)));
+    }
+    if (!env.WORKSPACES) for (const account of await linkedAccounts(env)) scheduleAccount(event, linkedEnv(env, account.id), context);
+  },
+
+  async queue(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
+    const accounts = workspaces(env);
+    for (const message of batch.messages) {
+      try {
+        const account = accounts.find(item => item.key === message.body.workspaceKey);
+        const key = message.body.workspaceKey;
+        const target = key?.startsWith(accountPrefix) && !env.WORKSPACES && await registered(env, key.slice(accountPrefix.length))
+          ? linkedEnv(env, key.slice(accountPrefix.length)) : account?.resolve();
+        if (target && await processDurableJob(target, message.body.id)) message.ack();
+        else message.retry();
+      } catch (error) {
+        console.error("[dmflow] queue job failed", message.body.id, error);
+        message.retry();
+      }
+    }
+  },
+} satisfies ExportedHandler<Env, QueueJob>;
+
+function scheduleAccount(event: ScheduledController, env: Env, context: ExecutionContext) {
     if (event.cron === "0 3 * * *") {
       context.waitUntil(refreshTokenIfDue(env).then((result) => console.log(`[dmflow] token refresh: ${result.status}`)));
       context.waitUntil(refreshInstagramMedia(env, 100).then(
@@ -57,21 +97,7 @@ const handler = {
     const work: Promise<unknown>[] = [processDueWork(env), processDueSequences(env), ensureInstagramWebhookSubscription(env)];
     if (env.MODE === "polling" && env.MOCK_MODE !== "true") work.push(runPoll(env));
     context.waitUntil(Promise.all(work));
-  },
-
-  async queue(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
-    for (const message of batch.messages) {
-      try {
-        const handled = await processDurableJob(env, message.body.id);
-        if (handled) message.ack();
-        else message.retry();
-      } catch (error) {
-        console.error("[dmflow] queue job failed", message.body.id, error);
-        message.retry();
-      }
-    }
-  },
-} satisfies ExportedHandler<Env, QueueJob>;
+}
 
 export default handler;
 

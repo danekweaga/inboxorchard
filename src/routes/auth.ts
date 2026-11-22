@@ -8,6 +8,7 @@ import { clearAuth, getAuth, kvGet, kvSet, now, saveAuth } from "../db";
 import type { Env } from "../types";
 import { metaAppId, metaAppSecret } from "../types";
 import { json, redirect, html } from "./http";
+import { accountPrefix, linkedEnv } from "../linked-accounts";
 
 function randomState(): string {
   return crypto.randomUUID().replace(/-/g, "");
@@ -29,8 +30,10 @@ export async function handleAuthorize(env: Env, url: URL): Promise<Response> {
   }
   await kvSet(env.DB, ticketKey, JSON.stringify({ ...ticketRecord, usedAt: unixNow() }));
   const state = randomState();
-  await kvSet(env.DB, `oauth_state:${state}`, JSON.stringify({ expiresAt: unixNow() + 600 }));
-  return redirect(buildAuthorizeUrl(appId, env.REDIRECT_URI, state));
+  await kvSet(env.DB, `oauth_state:${state}`, JSON.stringify({ expiresAt: unixNow() + 600, add: ticketRecord.add, target: ticketRecord.target }));
+  const authorize = new URL(buildAuthorizeUrl(appId, env.REDIRECT_URI, state));
+  if (ticketRecord.add) authorize.searchParams.set("force_authentication", "1");
+  return redirect(authorize.toString());
 }
 
 /** GET /auth/callback — exchange the code, verify the account is professional, store the token. */
@@ -60,6 +63,9 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
     // Fetch the profile to enforce the professional-account requirement + power the UI preview.
     const client = new InstagramClient(long.accessToken, env.GRAPH_VERSION, "me");
     const me = await client.getMe();
+    if (env.workspaceInstagramId && String(me.user_id ?? short.userId) !== env.workspaceInstagramId) {
+      return html("<h1>Choose the Instagram account configured for this workspace</h1>", 403);
+    }
     const accountType = (me.account_type ?? "").toUpperCase();
     if (accountType === "PERSONAL") {
       return html(
@@ -71,10 +77,16 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
     }
 
     const igUserId = me.user_id ?? short.userId;
+    const main = await env.DB.prepare("SELECT ig_user_id FROM auth WHERE id=1").first<{ ig_user_id: string }>();
+    if (expected.target && expected.target !== String(igUserId)) return html("<h1>Choose the linked Instagram profile</h1>", 409);
+    const additional = Boolean(env.IG_ACCOUNTS && (expected.add || expected.target) && String(igUserId) !== String(main?.ig_user_id));
+    if (!additional && main?.ig_user_id && String(main.ig_user_id) !== String(igUserId))
+      return html("<h1>Use Add Instagram account to connect another profile</h1>", 409);
+    const destination = additional ? linkedEnv(env, String(igUserId)) : env;
     const subscription = await new InstagramClient(long.accessToken, env.GRAPH_VERSION, igUserId).subscribeWebhooks();
     if (!subscription.success) throw new Error("Meta did not accept the Instagram webhook subscription");
 
-    await saveAuth(env.DB, {
+    await saveAuth(destination.DB, {
       access_token: long.accessToken,
       expires_at: now() + long.expiresIn,
       ig_user_id: igUserId,
@@ -82,12 +94,13 @@ export async function handleCallback(env: Env, url: URL): Promise<Response> {
       account_type: me.account_type ?? null,
       profile_picture_url: me.profile_picture_url ?? null,
     }, env.ENCRYPTION_KEY);
+    if (additional) await kvSet(env.DB, accountPrefix + igUserId, me.username || String(igUserId));
 
     return html(
       `<h1>Connected ✅</h1>
        <p>@${escapeHtml(me.username ?? "your account")} is now connected to Inbox Orchard.</p>
        <p>Subscribed to ${escapeHtml(REQUIRED_WEBHOOK_FIELDS.join(", "))} events.</p>
-       <p>Token valid ~60 days; it auto-refreshes. You can close this tab.</p>`,
+       <p><a href="${escapeHtml((env.PUBLIC_APP_ORIGIN || url.origin) + (additional ? "/?account=" + igUserId : "/"))}">Open this workspace</a></p>`,
     );
   } catch (e) {
     return html(`<h1>Connection failed</h1><pre>${escapeHtml(e instanceof Error ? e.message : String(e))}</pre>`, 500);
@@ -119,7 +132,7 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function parseExpiringValue(value: string | null): { expiresAt: number; usedAt?: number } | null {
+function parseExpiringValue(value: string | null): { expiresAt: number; usedAt?: number; add?: boolean; target?: string } | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as { expiresAt?: unknown; usedAt?: unknown };

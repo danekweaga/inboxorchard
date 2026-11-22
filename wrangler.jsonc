@@ -2,6 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "chatmany",
   "main": "./src/index.ts",
+  "durable_objects": { "bindings": [{ "name": "IG_ACCOUNTS", "class_name": "InstagramAccountStorage" }] },
+  "migrations": [{ "tag": "ig-accounts-v1", "new_sqlite_classes": ["InstagramAccountStorage"] }],
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {

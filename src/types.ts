@@ -2,6 +2,13 @@
 
 /** Cloudflare bindings + vars available on the Worker environment. */
 export interface Env {
+  IG_ACCOUNTS?: DurableObjectNamespace;
+  registryDB?: D1Database;
+  /** Additional workspaces configured by the installation owner. */
+  WORKSPACES?: string;
+  workspaceKey?: string;
+  workspaceInstagramId?: string;
+  workspaceOptions?: Array<{ label: string; origin: string }>;
   DB: D1Database;
   /** Optional in tests; required in a deployed installation. */
   TASK_QUEUE?: Queue;

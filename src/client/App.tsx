@@ -23,6 +23,8 @@ type PageKey = "dashboard" | "inbox" | "contacts" | "automations" | "campaigns" 
 type Notify = (message: string, kind?: "success" | "error") => void;
 
 interface Bootstrap {
+  linkedAccounts?: Array<{id:string; username:string}>;
+  workspaces?: Array<{ label: string; origin: string }>;
   product: { name: string; version: string; singleTenant: boolean };
   freeMode: boolean;
   mockMode: boolean;
@@ -128,6 +130,22 @@ export function App() {
       {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
       <main className="main-area">
         <header className="topbar">
+          {bootstrap.linkedAccounts && <select aria-label="Switch Instagram account" value={new URLSearchParams(location.search).get("account") || ""} onChange={async event => {
+            const value = event.target.value;
+            if (value === "add") {
+              try { const result = await post<{url:string}>("/integrations/instagram/connect?add=1"); location.assign(result.url); }
+              catch (error) { notify(errorMessage(error), "error"); }
+              return;
+            }
+            location.assign(value ? "/?account=" + encodeURIComponent(value) : "/");
+          }}>
+            <option value="">Main account</option>
+            {bootstrap.linkedAccounts.map(account => <option key={account.id} value={account.id}>@{account.username}</option>)}
+            <option value="add">+ Add Instagram account</option>
+          </select>}
+          {bootstrap.workspaces && <select aria-label="Instagram workspace" value={bootstrap.workspaces.find(w => w.origin === location.origin)?.origin ?? bootstrap.workspaces[0]?.origin} onChange={event => location.assign(event.target.value)}>
+            {bootstrap.workspaces.map(w => <option key={w.origin} value={w.origin}>{w.label}</option>)}
+          </select>}
           <button className="icon-button menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button>
           <div className={`status-pill ${bootstrap.instagram.connected ? "connected" : ""}`}><span />{bootstrap.instagram.connected ? `@${bootstrap.instagram.username ?? "Instagram connected"}` : "Instagram not connected"}</div>
           <div className="topbar-actions">

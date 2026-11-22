@@ -5,6 +5,7 @@ import type { Env } from "../types";
 export type JobType = "webhook_event" | "custom_webhook" | "automation_resume" | "email_send" | "outbound_message" | "http_action";
 
 export interface QueueJob {
+  workspaceKey?: string;
   id: string;
   type: JobType;
 }
@@ -38,7 +39,7 @@ export async function enqueueJob(
 
   if (env.TASK_QUEUE) {
     try {
-      await env.TASK_QUEUE.send({ id: jobId, type }, delaySeconds > 0 ? { delaySeconds } : undefined);
+      await env.TASK_QUEUE.send({ id: jobId, type, ...(env.workspaceKey && { workspaceKey: env.workspaceKey }) }, delaySeconds > 0 ? { delaySeconds } : undefined);
       await env.DB.prepare("UPDATE durable_jobs SET status = 'queued', updated_at = ? WHERE id = ?")
         .bind(unixNow(), jobId).run();
       await incrementUsage(env.DB, "queue_operations", 1);

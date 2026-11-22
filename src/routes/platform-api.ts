@@ -84,6 +84,8 @@ platformApi.get("/bootstrap", async (context) => {
   ].filter(([, value]) => !value).map(([name]) => name);
   return context.json({
     product: { name: "Inbox Orchard", version: "0.2.0", singleTenant: true },
+    workspaces: context.env.workspaceOptions,
+    linkedAccounts: context.env.IG_ACCOUNTS && !context.env.WORKSPACES ? await linkedAccounts(context.env) : undefined,
     freeMode: isFreeMode(context.env),
     mockMode: isMockMode(context.env),
     missingSecrets,
@@ -656,7 +658,8 @@ platformApi.delete("/ai-agent/knowledge/:id", async (context) => {
 platformApi.post("/integrations/instagram/connect", async (context) => {
   if (!metaAppId(context.env) || !metaAppSecret(context.env)) return jsonError("Meta credentials are not configured", 409);
   const ticket = crypto.randomUUID().replaceAll("-", "");
-  await kvSet(context.env.DB, `oauth_ticket:${await sha256(ticket)}`, JSON.stringify({ expiresAt: unixNow() + 300 }));
+  const add = context.req.query("add") === "1";
+  await kvSet(context.env.registryDB ?? context.env.DB, `oauth_ticket:${await sha256(ticket)}`, JSON.stringify({ expiresAt: unixNow() + 300, add, target: add ? undefined : context.env.workspaceInstagramId }));
   return context.json({ url: `/auth/authorize?ticket=${ticket}` });
 });
 
@@ -932,3 +935,4 @@ async function triggerContactAutomation(
     timestamp: unixNow(),
   });
 }
+import { linkedAccounts } from "../linked-accounts";

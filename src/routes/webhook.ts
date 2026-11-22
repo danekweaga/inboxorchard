@@ -5,6 +5,7 @@ import { ensureWebhookEventJob } from "../queue/jobs";
 import type { Env } from "../types";
 import { metaAppSecret, metaVerifyToken } from "../types";
 import { json } from "./http";
+import { linkedEnv, registered } from "../linked-accounts";
 
 /** GET /webhook — Meta subscription verification handshake. */
 export function handleWebhookVerify(env: Env, url: URL): Response {
@@ -32,6 +33,26 @@ export async function handleWebhookEvent(env: Env, req: Request): Promise<Respon
     return json({ error: "invalid JSON" }, 400);
   }
 
+  if (env.IG_ACCOUNTS && !env.WORKSPACES) {
+    if (!Array.isArray(body?.entry) || !body.entry.length) return json({ error: "Missing Instagram account" }, 400);
+    const main = await env.DB.prepare("SELECT ig_user_id FROM auth WHERE id=1").first<{ig_user_id:string}>();
+    for (const account of new Set(body.entry.map(entry => String(entry?.id)))) {
+      const target = account === String(main?.ig_user_id ?? "") ? env :
+        /^\d+$/.test(account) && await registered(env, account) ? linkedEnv(env, account) : null;
+      if (!target) continue;
+      const part = { ...body, entry: body.entry.filter(entry => String(entry.id) === account) };
+      await persistWebhook(target, part, JSON.stringify(part));
+    }
+    return json({ ok: true }, 202);
+  }
+  if (env.workspaceInstagramId && (!Array.isArray(body?.entry) || !body.entry.length ||
+      body.entry.some(entry => String(entry?.id) !== env.workspaceInstagramId))) {
+    return json({ error: "Unexpected Instagram account" }, 403);
+  }
+  return persistWebhook(env, body, raw);
+}
+
+async function persistWebhook(env: Env, body: WebhookBody, raw: string) {
   const eventId = id("wh");
   const idempotencyKey = await sha256(`instagram:${raw}`);
   const externalEventId = firstExternalId(body);
@@ -75,6 +96,7 @@ export async function verifySignature(appSecret: string, raw: string, header: st
 
 interface WebhookBody {
   entry?: Array<{
+    id?: string;
     changes?: Array<{ field?: string; value?: { id?: string } }>;
     messaging?: Array<{ message?: { mid?: string }; postback?: { mid?: string } }>;
   }>;
